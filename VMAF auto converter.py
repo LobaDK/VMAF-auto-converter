@@ -4,11 +4,15 @@ import os
 import xml.etree.ElementTree as ET
 import time
 
+input_dir = 'lossless' #Change this to set a custom input directory. Dot can be used to specify same directory as the script
+output_dir = 'AV1' #Change this to set a custom input directory. Dot can be used to specify same directory as the script
+
 try:
-    os.mkdir('converted')
+    os.mkdir({output_dir})
 except:
     pass
-for file in glob.glob('*.mp4'):
+for file in glob.glob(f'{input_dir}{os.path.sep}*.mp4'):
+    logical_cores = round(os.cpu_count() / 2) # get the amount of logical cores available on system.
     vmaf_value = 0
     attempt = 0
     max_attempt = 10 #Change this to set the max amount of allowed retries before quitting
@@ -22,23 +26,28 @@ for file in glob.glob('*.mp4'):
             time.sleep(2)
             break
         attempt += 1
-        subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}'])
-        subprocess.run(['ffmpeg', '-i', f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}', '-i', file, '-lavfi', 'libvmaf=log_path=log.xml', '-f', 'null', '-'], stdout=subprocess.PIPE)
-        root = ET.parse('log.xml').getroot()
-        vmaf_value = float(root.findall('pooled_metrics/metric')[-1].get('mean'))
+        p = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '8', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
+        if p.returncode == 0: #Skip on error or if file already exists
+            subprocess.run(['ffmpeg', '-i', f'{output_dir}{os.path.sep}{os.path.basename(file)}', '-i', file, '-lavfi', f'libvmaf=log_path=log.xml:n_threads={logical_cores}', '-f', 'null', '-'])
+            root = ET.parse('log.xml').getroot() #Parse the XML file containing the VMAF value
+            vmaf_value = float(root.findall('pooled_metrics/metric')[-1].get('mean')) #Find all VMAF 'mean' values and get the last one, as that's the deciding VMAF value
 
-        if not VMAF_min_value <= vmaf_value <= VMAF_max_value:
-            if vmaf_value < VMAF_min_value:
-                print(f'\nVMAF value too low, retrying with a CRF decrease of {crf_step} ({crf_value - crf_step})...')
+            if not VMAF_min_value <= vmaf_value <= VMAF_max_value: #If VMAF value is not inside the VMAF range
+                if vmaf_value < VMAF_min_value: #If VMAF value is below the minimum range
+                    print(f'\nVMAF value too low, retrying with a CRF decrease of {crf_step} ({crf_value - crf_step})...')
+                    time.sleep(2)
+                    crf_value -= crf_step
+                    os.remove(f'{output_dir}{os.path.sep}{os.path.basename(file)}') #Delete converted file to avoid FFmpeg skipping it
+                elif vmaf_value > VMAF_max_value: #If VMAF value is above the maximum range
+                    print(f'\nVMAF value too high, retrying with a CRF increase of {crf_step} ({crf_value + crf_step})...')
+                    time.sleep(2)
+                    crf_value += crf_step
+                    os.remove(f'{output_dir}{os.path.sep}{os.path.basename(file)}') #Delete converted file to avoid FFmpeg skipping it
+                continue
+            else:
+                print('\nVMAF score within acceptable range, continuing...')
                 time.sleep(2)
-                crf_value -= crf_step
-                os.remove(f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}')
-            elif vmaf_value > VMAF_max_value:
-                print(f'\nVMAF value too high, retrying with a CRF increase of {crf_step} ({crf_value + crf_step})...')
-                time.sleep(2)
-                crf_value += crf_step
-                os.remove(f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}')
-            continue
+                break
         else:
             break
 try:        
