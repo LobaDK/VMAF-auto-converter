@@ -12,7 +12,7 @@ for file in glob.glob('*.mp4'):
     vmaf_value = 0
     attempt = 0
     max_attempt = 10 #Change this to set the max amount of allowed retries before quitting
-    crf_value = 25 #Change this to set the default CRF value for ffmpeg to start converting with
+    crf_value = 40 #Change this to set the default CRF value for ffmpeg to start converting with
     crf_step = 1 #Change this to set the amount the CRF value should be increased per retry
     VMAF_min_value = 90 #Change this to determine the minimum allowed VMAF quality
     VMAF_max_value = 95 #Change this to determine the maximum allowed VMAF quality
@@ -45,4 +45,4 @@ try:
     os.remove('log.xml')
 except:
     pass
-input('\nDone!')
+input('\nDone!\n\nPress enter to exit')
