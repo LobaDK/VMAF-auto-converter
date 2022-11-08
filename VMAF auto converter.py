@@ -29,12 +29,12 @@ for file in glob.glob('*.mp4'):
 
         if not VMAF_min_value <= vmaf_value <= VMAF_max_value:
             if vmaf_value < VMAF_min_value:
-                print(f'\nVMAF value too low, retrying with a CRF decrease of 1 ({crf_value - crf_step})...')
+                print(f'\nVMAF value too low, retrying with a CRF decrease of {crf_step} ({crf_value - crf_step})...')
                 time.sleep(2)
                 crf_value -= crf_step
                 os.remove(f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}')
             elif vmaf_value > VMAF_max_value:
-                print(f'\nVMAF value too high, retrying with a CRF increase of 1 ({crf_value + crf_step})...')
+                print(f'\nVMAF value too high, retrying with a CRF increase of {crf_step} ({crf_value + crf_step})...')
                 time.sleep(2)
                 crf_value += crf_step
                 os.remove(f'converted/{os.path.splitext(file)[0]} converted{os.path.splitext(file)[1]}')
