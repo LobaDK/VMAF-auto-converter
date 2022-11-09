@@ -32,7 +32,7 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.mp4'):
             time.sleep(2)
             break
         attempt += 1
-        p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-an', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '1', '-f', 'null', pass_1_output])
+        p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '1', '-f', 'null', pass_1_output])
         if p1.returncode == 0: #Skip on error or if file already exists
             p2 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '2', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
             if p2.returncode == 0: #Skip on error or if file already exists
