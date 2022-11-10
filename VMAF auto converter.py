@@ -8,6 +8,13 @@ input_dir = 'lossless' #Change this to set a custom input directory. Dot can be 
 output_dir = 'AV1' #Change this to set a custom input directory. Dot can be used to specify same directory as the script
 #Changing both to a dot is not adviced since the original filename and extension is reused in the output, meaning ffmpeg will either outright fail, or the script can delete the file
 
+input_extension = 'mp4'
+logical_cores = round(os.cpu_count() / 2) # get the amount of logical cores available on system.
+max_attempt = 10 #Change this to set the max amount of allowed retries before quitting
+crf_step = 1 #Change this to set the amount the CRF value should change per retry
+VMAF_min_value = 90 #Change this to determine the minimum allowed VMAF quality
+VMAF_max_value = 95 #Change this to determine the maximum allowed VMAF quality
+
 if os.name == 'nt': #Visual Studio Code will complain about either one being unreachable, since os.name is a variable. Just ignore this
     pass_1_output = 'NUL'
 else:
@@ -17,15 +24,10 @@ try:
     os.mkdir(output_dir)
 except:
     pass
-for file in glob.glob(f'{input_dir}{os.path.sep}*.mp4'):
-    logical_cores = round(os.cpu_count() / 2) # get the amount of logical cores available on system.
+for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
     vmaf_value = 0
     attempt = 0
-    max_attempt = 10 #Change this to set the max amount of allowed retries before quitting
     crf_value = 40 #Change this to set the default CRF value for ffmpeg to start converting with
-    crf_step = 1 #Change this to set the amount the CRF value should change per retry
-    VMAF_min_value = 90 #Change this to determine the minimum allowed VMAF quality
-    VMAF_max_value = 95 #Change this to determine the maximum allowed VMAF quality
     while True:
         if attempt >= max_attempt:
             print('\nMaximum amount of allowed attempts exceeded. Stopping...')
