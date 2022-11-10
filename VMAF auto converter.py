@@ -13,6 +13,7 @@ logical_cores = round(os.cpu_count() / 2) # get the amount of logical cores avai
 max_attempt = 10 #Change this to set the max amount of allowed retries before quitting
 VMAF_min_value = 90 #Change this to determine the minimum allowed VMAF quality
 VMAF_max_value = 95 #Change this to determine the maximum allowed VMAF quality
+VMAF_offset_threshold = 2 #Change this to determine how much the VMAF value can deviate from the minimum and maximum values, before it starts to exponentially inecrease the CRF value (crf_step is increased by 1 for every time the value is VMAF_offset_threshold off from the minimum or maxumum VMAF value)
 
 if os.name == 'nt': #Visual Studio Code will complain about either one being unreachable, since os.name is a variable. Just ignore this
     pass_1_output = 'NUL'
@@ -45,14 +46,14 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
 
                     if not VMAF_min_value <= vmaf_value <= VMAF_max_value: #If VMAF value is not inside the VMAF range
                         if vmaf_value < VMAF_min_value: #If VMAF value is below the minimum range
-                            for _ in range(int((VMAF_min_value - vmaf_value) / 2)):
+                            for _ in range(int((VMAF_min_value - vmaf_value) / VMAF_offset_threshold)): #add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
                                 crf_step += 1
                             print(f'\nVMAF value too low, retrying with a CRF decrease of {crf_step} ({crf_value - crf_step})...')
                             time.sleep(2)
                             crf_value -= crf_step
                             os.remove(f'{output_dir}{os.path.sep}{os.path.basename(file)}') #Delete converted file to avoid FFmpeg skipping it
                         elif vmaf_value > VMAF_max_value: #If VMAF value is above the maximum range
-                            for _ in range(int((vmaf_value - VMAF_max_value) / 2)):
+                            for _ in range(int((vmaf_value - VMAF_max_value) / VMAF_offset_threshold)): #add 1 to crf_step, for each +2 the VMAF value is above the VMAF maximum e.g. a VMAF value of 99, and a VMAF maximum of 95, would temporarily add 2 to the crf_step
                                 crf_step += 1
                             print(f'\nVMAF value too high, retrying with a CRF increase of {crf_step} ({crf_value + crf_step})...')
                             time.sleep(2)
