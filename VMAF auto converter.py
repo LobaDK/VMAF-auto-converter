@@ -1,7 +1,7 @@
 import glob
 import subprocess
 import os
-import xml.etree.ElementTree as ET
+import json
 import time
 
 input_dir = 'lossless' #Change this to set a custom input directory. Dot can be used to specify same directory as the script
@@ -40,9 +40,9 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
             if p1.returncode == 0: #Skip on error
                 p2 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '2', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
                 if p2.returncode == 0: #Skip on error
-                    subprocess.run(['ffmpeg', '-i', f'{output_dir}{os.path.sep}{os.path.basename(file)}', '-i', file, '-lavfi', f'libvmaf=log_path=log.xml:n_threads={logical_cores}', '-f', 'null', '-'])
-                    root = ET.parse('log.xml').getroot() #Parse the XML file containing the VMAF value
-                    vmaf_value = float(root.findall('pooled_metrics/metric')[-1].get('mean')) #Find all VMAF 'mean' values and get the last one, as that's the deciding VMAF value
+                    subprocess.run(['ffmpeg', '-i', f'{output_dir}{os.path.sep}{os.path.basename(file)}', '-i', file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={logical_cores}', '-f', 'null', '-'])
+                    with open('log.json') as f: #Open the json file.
+                        vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['mean']) #Parse amd get the 'mean' vmaf value
 
                     if not VMAF_min_value <= vmaf_value <= VMAF_max_value: #If VMAF value is not inside the VMAF range
                         if vmaf_value < VMAF_min_value: #If VMAF value is below the minimum range
