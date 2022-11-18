@@ -37,7 +37,7 @@ except:
 for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
     vmaf_value = 0 #Reset the VMAF value for each new file. Technically not needed, but nice to have I guess
     attempt = 0 #Reset the attempts for each new file
-    crf_value = 40 #Change this to set the default CRF value for ffmpeg to start converting with
+    crf_value = 45 #Change this to set the default CRF value for ffmpeg to start converting with
     while True:
         crf_step = 1 #Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
         if attempt >= max_attempts:
@@ -47,15 +47,15 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
         attempt += 1
         if not glob.glob(f'{output_dir}{os.path.sep}{os.path.basename(os.path.splitext(file)[0])}.*'): #check if the same filename already exists in the output folder. Extension is ignored to allow custom input container types/extensions
             if use_multipass_encoding:
-                multipass_p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '1', '-f', 'null', pass_1_output])
+                multipass_p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', '5', '-movflags', '+faststart', '-pass', '1', '-f', 'null', pass_1_output])
                 if multipass_p1.returncode == 0: #Skip on error
-                    multipass_p2 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '8', '-movflags', '+faststart', '-pass', '2', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
+                    multipass_p2 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '5', '-movflags', '+faststart', '-pass', '2', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
                     if multipass_p2.returncode != 0: #Skip on error
                         break
                 else:
                     break
             else:
-                p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '8', '-movflags', '+faststart', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
+                p1 = subprocess.run(['ffmpeg', '-n', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', '192k', '-g', '600', '-preset', '5', '-movflags', '+faststart', f'{output_dir}{os.path.sep}{os.path.basename(file)}'])
                 if p1.returncode != 0: #Skip on error
                     break
 
@@ -65,7 +65,7 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
 
             if not VMAF_min_value <= vmaf_value <= VMAF_max_value: #If VMAF value is not inside the VMAF range
                 if vmaf_value < VMAF_min_value: #If VMAF value is below the minimum range
-                    if VMAF_offset_mode == 0 and not (VMAF_min_value - vmaf_value) >= 5:
+                    if VMAF_offset_mode == 0 and not (VMAF_min_value - vmaf_value) >= 5: #If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF min value
                         print('\nUsing threshold based increase')
                         for _ in range(int((VMAF_min_value - vmaf_value) / VMAF_offset_threshold)): #add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
                             crf_step += 1
@@ -79,7 +79,7 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
                     os.remove(f'{output_dir}{os.path.sep}{os.path.basename(file)}') #Delete converted file to avoid FFmpeg skipping it
 
                 elif vmaf_value > VMAF_max_value: #If VMAF value is above the maximum range
-                    if VMAF_offset_mode == 0 and not (vmaf_value - VMAF_max_value) >= 5:
+                    if VMAF_offset_mode == 0 and not (vmaf_value - VMAF_max_value) >= 5: #If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF max value
                         print('\nUsing threshold based increase')
                         for _ in range(int((vmaf_value - VMAF_max_value) / VMAF_offset_threshold)): #add 1 to crf_step, for each +2 the VMAF value is above the VMAF maximum e.g. a VMAF value of 99, and a VMAF maximum of 95, would temporarily add 2 to the crf_step
                             crf_step += 1
