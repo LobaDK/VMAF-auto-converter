@@ -56,7 +56,7 @@ for file in glob.glob(f'{input_dir}{os.path.sep}*.{input_extension}'):
     filename, extension = os.path.splitext(file)
     vmaf_value = 0 # Reset the VMAF value for each new file. Technically not needed, but nice to have I guess
     attempt = 0 # Reset the attempts for each new file
-    crf_value = 42 # Change this to set the default CRF value for ffmpeg to start converting with
+    crf_value = 45 # Change this to set the default CRF value for ffmpeg to start converting with
     while True:
         crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
         if attempt >= max_attempts:
