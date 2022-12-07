@@ -10,7 +10,6 @@ import tempfile
 
 class main:
     def signal_handler(sig, frame):
-        print('Cleaning up...')
         main.cleanup()
         exit()
 
@@ -24,9 +23,9 @@ class main:
         self.input_extension = 'mp4' # Change this to set the container type that should be converted. A * (wildcard) can instead be used to ignore container type, but make sure there's only video files in the given directory then 
         self.output_extension = 'mp4' # Can be changed to another extension, but only recommended if the encoder codec has been changed to another one
         self.use_intro = False
-        self.use_outro = True
+        self.use_outro = False
         self.intro_file = r''
-        self.outro_file = r'C:\Users\nickl\Downloads\LobaDKsplashnoaudio.mp4'
+        self.outro_file = r''
 
         #Scene split parameters:
         self.scene_splits = 5 # Change this to determine how many times the input video should be split, divided in equal chunks
@@ -330,9 +329,10 @@ class main:
 
         self.GetAudioMetadata(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}')
         if self.detected_audio_stream:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0:v', '-map', '1:a', '-c', 'copy', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']
+            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c', 'copy', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']
         else:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']        
+            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']        
+
 
         p = subprocess.run(arg)
         if p.returncode != 0:
@@ -341,23 +341,14 @@ class main:
             exit(1)
         
     def cleanup():
-        try:        
-            os.remove('log.json')
-        except:
-            pass
-        try:
-            os.remove('ffmpeg2pass-0.log')
-        except:
-            pass
-        try:
-            os.remove(f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}')
-        except:
-            pass
-        try:
-            os.remove(f'{os.path.join(tempfile.gettempdir(), "VMAF intro.mp4")}')
-        except:
-            pass
-        
+        print('Cleaning up...')
+        tempfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log', f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}']
+        for tempfile in tempfile_list:
+            try:        
+                os.remove(tempfile)
+            except:
+                pass
+
         if os.path.exists('VMAF auto converter temp'):
             main.tempcleanup()
 
