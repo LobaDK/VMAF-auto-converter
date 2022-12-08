@@ -343,9 +343,9 @@ class main:
     def cleanup():
         print('Cleaning up...')
         tempfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log', f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}']
-        for tempfile in tempfile_list:
+        for temp in tempfile_list:
             try:        
-                os.remove(tempfile)
+                os.remove(temp)
             except:
                 pass
 
