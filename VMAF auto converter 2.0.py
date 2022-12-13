@@ -211,7 +211,7 @@ class main:
         else:
             subprocess.run(['ffmpeg', '-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-'])
         with open('log.json') as f: # Open the json file.
-            self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['mean']) # Parse amd get the 'mean' vmaf value
+            self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
         if not self.VMAF_min_value <= self.vmaf_value <= self.VMAF_max_value: # If VMAF value is not inside the VMAF range
             if self.vmaf_value < self.VMAF_min_value: # If VMAF value is below the minimum range
