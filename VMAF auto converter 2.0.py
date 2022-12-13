@@ -29,7 +29,9 @@ class main:
 
         #File chunking parameters:
         self.file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks
-        self.use_file_chunking = True # Whether or not the video should be split into chunks
+        self.chunk_frequency = 10
+        self.file_chunking_mode = 2 # 0 = Disabled, 1 = split file into file_chunk amount, 2 = split file every chunk_frequency
+
 
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
@@ -73,10 +75,12 @@ class main:
             self.crf_value = self.initial_crf_value
         
             if not glob.glob(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.*'): #check if the same filename already exists in the output folder. Extension is ignored to allow custom input container types/extensions
-                if self.use_file_chunking:
-                    self.chunk_split()
-                else:
+                if self.file_chunking_mode == 0:
                     self.no_chunk_split()
+                elif self.file_chunking_mode == 1:
+                    self.chunk_split()
+                elif self.file_chunking_mode == 2:
+                    self.chunk_frequency_split()
                 
                 if self.use_intro or self.use_outro:
                     self.IntroOutro()
@@ -89,6 +93,92 @@ class main:
         main.cleanup()
         input('\nDone!\n\nPress enter to exit')
         exit()
+
+    def chunk_frequency_split(self):
+        
+        self.GetVideoMetadata(self.file)
+        self.GetAudioMetadata(self.file)
+
+        while True:
+            try:
+                os.mkdir('VMAF auto converter temp')
+            except FileExistsError:
+                main.tempcleanup()
+            else:
+                break
+        
+        if self.detected_audio_stream:
+            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}'])
+            if audio_extract.returncode != 0:
+                print('Error extracting audio track!')
+                exit(1)
+
+        self.last_total_time = self.total_time - int(self.total_time)
+        self.total_time_without_last = int(self.total_time - self.last_total_time)
+
+        self.i = 0
+        for self.start_time in range(0, self.total_time_without_last, self.chunk_frequency):
+            self.i += 1
+            self.crf_value = self.initial_crf_value
+            self.attempt = self.initial_attempt
+            if not self.start_time + self.chunk_frequency + self.last_total_time == self.total_time:
+                self.end_time = (((self.start_time + self.chunk_frequency) * self.fps) - 1) / self.fps
+            else:
+                self.end_time = self.total_time
+            
+            while True:
+                self.crf_step = self.initial_crf_step
+
+                print(f'Cutting from timestamp {self.start_time} to {self.end_time}')
+
+                if self.use_multipass_encoding:
+                    multipass_p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_time), '-to', str(self.end_time), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output])
+                    if multipass_p1.returncode == 0:
+                        multipass_p2 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_time), '-to', str(self.end_time), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', f'VMAF auto converter temp{os.path.sep}chunk{self.i}.{self.output_extension}'])
+                        if multipass_p2.returncode != 0:
+                            break
+                    else:
+                        break
+                else:
+                    p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_time), '-to', str(self.end_time), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), f'VMAF auto converter temp{os.path.sep}chunk{self.i}.{self.output_extension}'])
+                    if p1.returncode != 0:
+                        print('Error converting video!')
+                        break
+
+                if self.attempt >= self.max_attempts:
+                    print('\nMaximum amount of allowed attempts exceeded. skipping...')
+                    time.sleep(2)
+                    return
+                self.attempt += 1
+
+                if self.checkVMAF(f'VMAF auto converter temp{os.path.sep}chunk{self.i}.{self.output_extension}'):
+                    if not self.end_time == self.total_time:
+                        break
+                    else:
+                        concat_file = open(f'VMAF auto converter temp{os.path.sep}concatlist.txt', 'a')
+                        files = glob.glob(f'VMAF auto converter temp{os.path.sep}chunk*.{self.output_extension}')
+                        for file in files:
+                            concat_file.write(f"file '{os.path.basename(file)}'\n")
+
+                        concat_file.close()
+
+                        if self.detected_audio_stream:
+                            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', f'VMAF auto converter temp{os.path.sep}concatlist.txt', '-i', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+                        else:
+                            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', f'VMAF auto converter temp{os.path.sep}concatlist.txt', '-i', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+                        
+                        p2 = subprocess.run(arg)
+
+                        if p2.returncode == 0:
+                            print('Chunks successfully concatenated!')
+                            time.sleep(3)
+                            return
+                        else:
+                            print('Error concatenating video. Please check output and video.')
+                            input('\nPress enter to continue')
+                            return
+                else:
+                    continue
 
     def chunk_split(self):
 
@@ -206,7 +296,7 @@ class main:
                 continue
 
     def checkVMAF(self, output_filename : str):
-        if self.use_file_chunking:
+        if self.file_chunking_mode:
             subprocess.run(['ffmpeg', '-i', output_filename, '-i', self.file, '-lavfi', f'[0:v]trim=start=0[distorted];[1:v]trim=start_frame={self.start_frame}:end_frame={self.end_frame},setpts=PTS-STARTPTS[reference];[distorted][reference]libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-'])
         else:
             subprocess.run(['ffmpeg', '-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-'])
@@ -244,7 +334,7 @@ class main:
                 
             return False
         else:
-            if self.use_file_chunking:
+            if self.file_chunking_mode:
                 print(f'\nchunk {self.i + 1} out of {self.file_chunks}\nTook {self.attempt} attempt(s)!')
             else:
                 print(f'\nVMAF score within acceptable range, continuing...\nTook {self.attempt} attempt(s)!')
@@ -262,6 +352,7 @@ class main:
         else:
             self.total_frames = int(self.video_metadata['nb_frames'])
             self.video_codec_name = self.video_metadata['codec_name']
+            self.total_time = float(self.video_metadata['duration'])
         
         self.fps = '0'
         try:
