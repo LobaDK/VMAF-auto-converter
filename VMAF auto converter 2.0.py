@@ -32,7 +32,6 @@ class main:
         self.chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
         self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
 
-
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
         self.max_attempts = 10 # Change this to set the max amount of allowed retries before continuing to the next file/chunk
@@ -61,7 +60,7 @@ class main:
         else:
             self.pass_1_output = '/dev/null'
 
-        self.initial_attempt = 0 # Reset the attempts for each new file
+        self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
     
     def main(self):
         try:
@@ -100,16 +99,10 @@ class main:
         self.GetAudioMetadata(self.file)
         self.total_chunks = math.ceil(self.total_frames / int(self.fps) / self.chunk_frequency)
 
-        while True:
-            try:
-                os.mkdir('VMAF auto converter temp')
-            except FileExistsError:
-                main.tempcleanup()
-            else:
-                break
+        self.CreateTempFolder()
         
         if self.detected_audio_stream:
-            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}'])
+            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}')])
             if audio_extract.returncode != 0:
                 print('Error extracting audio track!')
                 exit(1)
@@ -119,7 +112,7 @@ class main:
         for self.i in range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency):
             self.ii += 1
             self.crf_value = self.initial_crf_value
-            self.attempt = self.initial_attempt
+            self.attempt = 0 #reset attempts after each file
             
             if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
                 self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
@@ -130,7 +123,7 @@ class main:
             
             while True:
                 if self.split():
-                    if self.checkVMAF(f'VMAF auto converter temp{os.path.sep}chunk{self.ii}.{self.output_extension}'):
+                    if self.checkVMAF(os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')):
                         if not last_chunk:
                             self.start_frame = self.end_frame + 1
                             break
@@ -142,24 +135,16 @@ class main:
                 else:
                     break
 
-                
-
     def chunk_split(self):
 
         self.GetVideoMetadata(self.file)
         self.GetAudioMetadata(self.file)
         self.total_chunks = self.file_chunks
 
-        while True:
-            try:
-                os.mkdir('VMAF auto converter temp')
-            except FileExistsError:
-                main.tempcleanup()
-            else:
-                break
+        self.CreateTempFolder()
         
         if self.detected_audio_stream:
-            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}'])
+            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}')])
             if audio_extract.returncode != 0:
                 print('Error extracting audio track!')
                 exit(1)
@@ -169,12 +154,12 @@ class main:
         for self.i in range(self.file_chunks):
             self.ii += 1
             self.crf_value = self.initial_crf_value
-            self.attempt = self.initial_attempt
+            self.attempt = 0 #reset attempts after each file
             self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
             
             while True:
                 if self.split():
-                    if self.checkVMAF(f'VMAF auto converter temp{os.path.sep}chunk{self.ii}.{self.output_extension}'):
+                    if self.checkVMAF(os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')):
                         if not self.ii >= 5:
                             self.start_frame = self.end_frame + 1
                             break
@@ -187,7 +172,7 @@ class main:
                     break
 
     def no_chunk_split(self):
-        self.attempt = self.initial_attempt
+        self.attempt = 0 #reset attempts after each file
         self.GetAudioMetadata(self.file)
 
         while True:
@@ -273,13 +258,13 @@ class main:
         if self.use_multipass_encoding:
             multipass_p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output])
             if multipass_p1.returncode == 0:
-                multipass_p2 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', f'VMAF auto converter temp{os.path.sep}chunk{self.ii}.{self.output_extension}'])
+                multipass_p2 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')])
                 if multipass_p2.returncode != 0:
                     return False
             else:
                 return False
         else:
-            p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), f'VMAF auto converter temp{os.path.sep}chunk{self.ii}.{self.output_extension}'])
+            p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')])
             if p1.returncode != 0:
                 print('Error converting video!')
                 return False
@@ -292,17 +277,17 @@ class main:
         return True
 
     def concat(self):
-        concat_file = open(f'VMAF auto converter temp{os.path.sep}concatlist.txt', 'a')
-        files = glob.glob(f'VMAF auto converter temp{os.path.sep}chunk*.{self.output_extension}')
+        concat_file = open(os.path.join(self.tempdir, 'concatlist.txt'), 'a')
+        files = glob.glob(os.path.join(self.tempdir, f'chunk*.{self.output_extension}'))
         for file in files:
             concat_file.write(f"file '{os.path.basename(file)}'\n")
 
         concat_file.close()
 
         if self.detected_audio_stream:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', f'VMAF auto converter temp{os.path.sep}concatlist.txt', '-i', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-i', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}'), '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
         else:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', f'VMAF auto converter temp{os.path.sep}concatlist.txt', '-i', f'VMAF auto converter temp{os.path.sep}audio.{self.audio_codec_name}', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
         
         p2 = subprocess.run(arg)
 
@@ -350,22 +335,24 @@ class main:
 
     def IntroOutro(self):
         
+        self.CreateTempFolder()
+
         if self.use_intro:
             self.GetVideoMetadata(self.intro_file)
             self.GetAudioMetadata(self.intro_file)
 
             if self.detected_audio_stream:
-                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(tempfile.gettempdir(), "VMAF intro.mp4")}'])
+                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}'])
             else:
-                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(tempfile.gettempdir(), "VMAF intro.mp4")}'])
+                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}'])
         if self.use_outro:
             self.GetVideoMetadata(self.outro_file)
             self.GetAudioMetadata(self.outro_file)
 
             if self.detected_audio_stream:
-                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}'])
+                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}'])
             else:
-                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}'])
+                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}'])
 
         p = subprocess.run(arg)
         if p.returncode != 0:
@@ -376,17 +363,17 @@ class main:
         
         if self.use_intro and not self.use_outro:
             IntroOutro = open('IntroOutroList.txt', 'w')
-            IntroOutro.write(f"file '{os.path.join(tempfile.gettempdir(), 'VMAF intro.mp4')}'\n")
+            IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF intro.mp4')}'\n")
             IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'")
         if self.use_outro and not self.use_intro:
             IntroOutro = open('IntroOutroList.txt', 'w')
             IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'\n")
-            IntroOutro.write(f"file '{os.path.join(tempfile.gettempdir(), 'VMAF outro.mp4')}'")
+            IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF outro.mp4')}'")
         else:
             IntroOutro = open('IntroOutroList.txt', 'w')
-            IntroOutro.write(f"file '{os.path.join(tempfile.gettempdir(), 'VMAF intro.mp4')}'\n")
+            IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF intro.mp4')}'\n")
             IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'\n")
-            IntroOutro.write(f"file '{os.path.join(tempfile.gettempdir(), 'VMAF outro.mp4')}'")
+            IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF outro.mp4')}'")
         IntroOutro.close()
 
         self.GetAudioMetadata(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}')
@@ -402,21 +389,28 @@ class main:
             print('Error applying intro or outro to file!')
             exit(1)
         
+    def CreateTempFolder(self):
+        try:
+            os.mkdir(self.tempdir)
+        except FileExistsError:
+            self.tempcleanup()
+            os.mkdir(self.tempdir)
+
     def cleanup():
         print('Cleaning up...')
-        tempfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log', f'{os.path.join(tempfile.gettempdir(), "VMAF outro.mp4")}']
+        tempfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log']
         for temp in tempfile_list:
             try:        
                 os.remove(temp)
             except:
                 pass
 
-        if os.path.exists('VMAF auto converter temp'):
+        if os.path.exists(os.path.join(tempfile.gettempdir(), 'VMAF auto converter')):
             main.tempcleanup()
 
     def tempcleanup():
         try:
-            shutil.rmtree('VMAF auto converter temp')
+            shutil.rmtree(os.path.join(tempfile.gettempdir(), 'VMAF auto converter'))
         except:
             print('Error cleaning up temp directory')
 
