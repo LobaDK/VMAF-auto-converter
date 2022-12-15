@@ -30,7 +30,7 @@ class main:
         #File chunking parameters:
         self.file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks. file_chunking_mode = 1
         self.chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
-        self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
+        self.file_chunking_mode = 0 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
 
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
@@ -52,6 +52,16 @@ class main:
         # Secondary option (multiplication based) is way more aggressive, but also more flexible, resulting in less attempts, but can also over- and undershoot the target, and may be less accurate. Very good for high deviations
         # If the VMAF offset is 5 or more, it will automatically switch to a multiplication based exponential increase regardless of user settings
         self.initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
+
+        #Verbosity parameters:
+        self.ffmpeg_verbose_level = 1 # 0 = Display none of ffmpeg's output, 1 = Display only ffmpeg stats, 2 = Display ffmpeg stats and encoder-specific information
+
+        if self.ffmpeg_verbose_level == 0:
+            self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet']
+        elif self.ffmpeg_verbose_level == 1:
+            self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet', '-stats']
+        else:
+            self.arg_start = ['ffmpeg', '-n']
 
         self.physical_cores = int(os.cpu_count() / 2) # get the amount of physical cores available on system.
     
@@ -102,10 +112,7 @@ class main:
         self.CreateTempFolder()
         
         if self.detected_audio_stream:
-            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}')])
-            if audio_extract.returncode != 0:
-                print('Error extracting audio track!')
-                exit(1)
+            self.ExtractAudio()
 
         self.start_frame = 0
         self.ii = 0
@@ -144,10 +151,7 @@ class main:
         self.CreateTempFolder()
         
         if self.detected_audio_stream:
-            audio_extract = subprocess.run(['ffmpeg', '-y', '-i', self.file, '-vn', '-c:a', 'copy', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}')])
-            if audio_extract.returncode != 0:
-                print('Error extracting audio track!')
-                exit(1)
+            self.ExtractAudio()
             
         self.start_frame = 0
         self.ii = 0
@@ -179,20 +183,31 @@ class main:
 
             self.crf_step = self.initial_crf_step
             if self.use_multipass_encoding:
-                multipass_p1 = subprocess.run(['ffmpeg', '-n', '-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '1', '-f', 'null', self.pass_1_output])
+                arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '1', '-f', 'null', self.pass_1_output]
+                arg[0:0] = self.arg_start
+                print('\nPerforming pass-1 encoding...\n')
+                multipass_p1 = subprocess.run(arg)
                 if multipass_p1.returncode == 0: # Skip on error
-                    multipass_p2 = subprocess.run(['ffmpeg', '-n', '-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '2', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'])
+                    arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '2', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+                    arg[0:0] = self.arg_start
+                    print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
+                    multipass_p2 = subprocess.run(arg)
                     if multipass_p2.returncode != 0: # Skip on error
-                        print('Error converting pass-2 video!')
+                        print('\nError converting pass-2 video!')
                         break
+                    print('\nPass-2 encoding finished!')
                 else:
-                    print('Error converting pass-1 video!')
+                    print('\nError converting pass-1 video!')
                     break
             else:
-                p1 = subprocess.run(['ffmpeg', '-n', '-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'])
+                arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+                arg[0:0] = self.arg_start
+                print('\nPerforming video encode...\n')
+                p1 = subprocess.run(arg)
                 if p1.returncode != 0: # Skip on error
-                    print('Error converting video!')
+                    print('\nError converting video!')
                     break
+                print('\nVideo encoding finished!')
             
             if self.attempt >= self.max_attempts:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
@@ -206,15 +221,21 @@ class main:
                 continue
 
     def checkVMAF(self, output_filename : str):
+        print('\ncomparing video quality...\n')
         if self.file_chunking_mode:
-            subprocess.run(['ffmpeg', '-i', output_filename, '-i', self.file, '-lavfi', f'[0:v]trim=start=0[distorted];[1:v]trim=start_frame={self.start_frame}:end_frame={self.end_frame},setpts=PTS-STARTPTS[reference];[distorted][reference]libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-'])
+            arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'[0:v]trim=start=0[distorted];[1:v]trim=start_frame={self.start_frame}:end_frame={self.end_frame},setpts=PTS-STARTPTS[reference];[distorted][reference]libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+            arg[0:0] = self.arg_start
+            subprocess.run(arg)
         else:
-            subprocess.run(['ffmpeg', '-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-'])
+            arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+            arg[0:0] = self.arg_start
+            subprocess.run(arg)
         with open('log.json') as f: # Open the json file.
             self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
         if not self.VMAF_min_value <= self.vmaf_value <= self.VMAF_max_value: # If VMAF value is not inside the VMAF range
             if self.vmaf_value < self.VMAF_min_value: # If VMAF value is below the minimum range
+                print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too low\n')
                 if self.VMAF_offset_mode == 0 and not (self.VMAF_min_value - self.vmaf_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF min value
                     print('\nUsing threshold based increase')
                     for _ in range(int((self.VMAF_min_value - self.vmaf_value) / self.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
@@ -223,12 +244,13 @@ class main:
                     print('\nUsing multiplicative based increase')
                     self.crf_step += int((self.VMAF_min_value - self.vmaf_value) * self.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the minimum allowed value
 
-                print(f'VMAF harmonic mean score of {self.vmaf_value}...\nVMAF value too low, retrying with a CRF decrease of {self.crf_step}. New CRF: ({self.crf_value - self.crf_step})...')
+                print(f'Retrying with a CRF decrease of {self.crf_step}. New CRF: ({self.crf_value - self.crf_step})...')
                 time.sleep(2)
                 self.crf_value -= self.crf_step
                 os.remove(output_filename) # Delete converted file to avoid FFmpeg skipping it
 
             elif self.vmaf_value > self.VMAF_max_value: # If VMAF value is above the maximum range
+                print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too high')
                 if self.VMAF_offset_mode == 0 and not (self.vmaf_value - self.VMAF_max_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF max value
                     print('\nUsing threshold based increase')
                     for _ in range(int((self.vmaf_value - self.VMAF_max_value) / self.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is above the VMAF maximum e.g. a VMAF value of 99, and a VMAF maximum of 95, would temporarily add 2 to the crf_step
@@ -237,37 +259,48 @@ class main:
                     print('\nUsing multiplicative based increase')
                     self.crf_step += int((self.vmaf_value - self.VMAF_max_value) * self.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the maximum allowed value
 
-                print(f'VMAF harmonic mean score of {self.vmaf_value}...\nVMAF value too high, retrying with a CRF increase of {self.crf_step}. New CRF: ({self.crf_value + self.crf_step})...')
+                print(f'Retrying with a CRF increase of {self.crf_step}. New CRF: ({self.crf_value + self.crf_step})...')
                 time.sleep(2)
                 self.crf_value += self.crf_step
                 os.remove(output_filename) # Delete converted file to avoid FFmpeg skipping it
                 
             return False
         else:
-            print(f'\nVMAF harmonic mean score of {self.vmaf_value}...\nVMAF score within acceptable range, continuing...\nTook {self.attempt} attempt(s)!')
+            print(f'\nVMAF harmonic mean score of {self.vmaf_value}...\nVMAF score within acceptable range, continuing...\nTook {self.attempt} attempt(s)!\n')
             if self.file_chunking_mode != 0:
-                print(f'\nCompleted chunk {self.ii} out of {self.total_chunks}')
+                print(f'Completed chunk {self.ii} out of {self.total_chunks}')
             time.sleep(3)
             return True
 
     def split(self):
         self.crf_step = self.initial_crf_step
         
-        print(f'Cutting from frame {self.start_frame} to frame {self.end_frame}\n')
+        print(f'\nCutting from frame {self.start_frame} to frame {self.end_frame}')
         
         if self.use_multipass_encoding:
-            multipass_p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output])
+            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
+            arg[0:0] = self.arg_start
+            print('\nPerforming pass-1 encoding...\n')
+            multipass_p1 = subprocess.run(arg)
             if multipass_p1.returncode == 0:
-                multipass_p2 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')])
+                arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+                arg[0:0] = self.arg_start
+                multipass_p2 = subprocess.run(arg)
+                print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
                 if multipass_p2.returncode != 0:
                     return False
+                print('\nPass-2 encoding finished!')
             else:
                 return False
         else:
-            p1 = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')])
+            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+            arg[0:0] = self.arg_start
+            print('\nPerforming video encode...\n')
+            p1 = subprocess.run(arg)
             if p1.returncode != 0:
                 print('Error converting video!')
                 return False
+            print('\nVideo encoding finished!')
 
         if self.attempt >= self.max_attempts:
             print('\nMaximum amount of allowed attempts exceeded. skipping...')
@@ -285,18 +318,29 @@ class main:
         concat_file.close()
 
         if self.detected_audio_stream:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-i', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}'), '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-i', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}'), '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
         else:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
         
+        arg[0:0] = self.arg_start
+        print('\nCombining chunks...\n')
         p2 = subprocess.run(arg)
 
         if p2.returncode == 0:
-            print('Chunks successfully concatenated!')
+            print('\nChunks successfully combined!')
             time.sleep(3)
         else:
-            print('Error concatenating video. Please check output and video.')
+            print('Error combining video chunks. Please check output and video.')
             input('\nPress enter to continue')
+
+    def ExtractAudio(self):
+        arg = ['-i', self.file, '-vn', '-c:a', 'copy', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}')]
+        arg[0:0] = self.arg_start
+        print('\nExtracting audio...\n')
+        audio_extract = subprocess.run(arg)
+        if audio_extract.returncode != 0:
+            print('\nError extracting audio track!')
+            exit(1)
 
     def GetVideoMetadata(self, output_filename):
         try:
@@ -304,7 +348,7 @@ class main:
             stdout, stderr = video_stream.communicate()
             self.video_metadata = json.loads(stdout)['streams'][0]
         except IndexError:
-            print('No video stream detected!')
+            print('\nNo video stream detected!')
             exit(1)
         else:
             self.total_frames = int(self.video_metadata['nb_frames'])
@@ -314,7 +358,7 @@ class main:
         try:
             self.fps = self.video_metadata['avg_frame_rate'].split('/', 1)[0]
         except:
-            print('Error getting video frame rate.')
+            print('\nError getting video frame rate.')
             while not self.fps.isnumeric() or self.fps == '0':
                 self.fps = input('Manual input required: ')
 
@@ -325,7 +369,7 @@ class main:
             self.audio_metadata = json.loads(stdout)['streams'][0]
         except IndexError:
             self.detected_audio_stream = False
-            print('No audio stream detected.')
+            print('\nNo audio stream detected.')
         else:
             self.detected_audio_stream = True
             self.audio_codec_name = self.audio_metadata['codec_name']
@@ -342,24 +386,32 @@ class main:
             self.GetAudioMetadata(self.intro_file)
 
             if self.detected_audio_stream:
-                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}'])
+                arg = ['-i', self.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
             else:
-                arg = (['ffmpeg', '-y', '-i', self.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}'])
+                arg = ['-i', self.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
+            arg[0:0] = self.arg_start
+            print('\nEncoding intro...\n')
+            p = subprocess.run(arg)
+            if p.returncode != 0:
+                print(' '.join(arg))
+                print('\nError converting intro file to suitable format!')
+                exit(1)
+
         if self.use_outro:
             self.GetVideoMetadata(self.outro_file)
             self.GetAudioMetadata(self.outro_file)
 
             if self.detected_audio_stream:
-                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}'])
+                arg = ['-i', self.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
             else:
-                arg = (['ffmpeg', '-y', '-i', self.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}'])
-
-        p = subprocess.run(arg)
-        if p.returncode != 0:
-            print(' '.join(arg))
-            print('Error converting intro or outro file to suitable format!')
-            exit(1)
-
+                arg = ['-i', self.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
+            arg[0:0] = self.arg_start
+            print('\nEncoding outro...\n')
+            p = subprocess.run(arg)
+            if p.returncode != 0:
+                print(' '.join(arg))
+                print('\nError converting outro file to suitable format!')
+                exit(1)
         
         if self.use_intro and not self.use_outro:
             IntroOutro = open('IntroOutroList.txt', 'w')
@@ -378,16 +430,18 @@ class main:
 
         self.GetAudioMetadata(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}')
         if self.detected_audio_stream:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c', 'copy', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c', 'copy', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']
         else:
-            arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']        
+            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']        
+        arg[0:0] = self.arg_start
 
-
+        print('\nCombining intro/outro with video...\n')
         p = subprocess.run(arg)
         if p.returncode != 0:
             print(' '.join(arg))
-            print('Error applying intro or outro to file!')
+            print('\nError applying intro or outro to file!')
             exit(1)
+        print('\nSuccess!')
         
     def CreateTempFolder(self):
         try:
@@ -412,7 +466,7 @@ class main:
         try:
             shutil.rmtree(os.path.join(tempfile.gettempdir(), 'VMAF auto converter'))
         except:
-            print('Error cleaning up temp directory')
+            print('\nError cleaning up temp directory')
 
 if __name__ == '__main__':
     mainClass = main()
