@@ -30,7 +30,7 @@ class main:
         #File chunking parameters:
         self.file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks. file_chunking_mode = 1
         self.chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
-        self.file_chunking_mode = 0 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
+        self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
 
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
@@ -222,20 +222,15 @@ class main:
 
     def checkVMAF(self, output_filename : str):
         print('\ncomparing video quality...\n')
-        if self.file_chunking_mode:
-            arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'[0:v]trim=start=0[distorted];[1:v]trim=start_frame={self.start_frame}:end_frame={self.end_frame},setpts=PTS-STARTPTS[reference];[distorted][reference]libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
-            arg[0:0] = self.arg_start
-            subprocess.run(arg)
-        else:
-            arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
-            arg[0:0] = self.arg_start
-            subprocess.run(arg)
+        arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+        arg[0:0] = self.arg_start
+        subprocess.run(arg)
         with open('log.json') as f: # Open the json file.
             self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
         if not self.VMAF_min_value <= self.vmaf_value <= self.VMAF_max_value: # If VMAF value is not inside the VMAF range
             if self.vmaf_value < self.VMAF_min_value: # If VMAF value is below the minimum range
-                print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too low\n')
+                print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too low')
                 if self.VMAF_offset_mode == 0 and not (self.VMAF_min_value - self.vmaf_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF min value
                     print('\nUsing threshold based increase')
                     for _ in range(int((self.VMAF_min_value - self.vmaf_value) / self.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
@@ -276,14 +271,21 @@ class main:
         self.crf_step = self.initial_crf_step
         
         print(f'\nCutting from frame {self.start_frame} to frame {self.end_frame}')
-        
+
+        if not os.path.exists(os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}')):
+            print('\nPreparing chunk...')
+            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'copy', '-an', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}')], stderr=subprocess.DEVNULL)
+            if p.returncode != 0:
+                print('Error preparing chunk!')
+                exit(1)
+
         if self.use_multipass_encoding:
-            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
+            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
             arg[0:0] = self.arg_start
             print('\nPerforming pass-1 encoding...\n')
             multipass_p1 = subprocess.run(arg)
             if multipass_p1.returncode == 0:
-                arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+                arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
                 arg[0:0] = self.arg_start
                 multipass_p2 = subprocess.run(arg)
                 print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
@@ -293,7 +295,7 @@ class main:
             else:
                 return False
         else:
-            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
             arg[0:0] = self.arg_start
             print('\nPerforming video encode...\n')
             p1 = subprocess.run(arg)
@@ -312,8 +314,8 @@ class main:
     def concat(self):
         concat_file = open(os.path.join(self.tempdir, 'concatlist.txt'), 'a')
         files = glob.glob(os.path.join(self.tempdir, f'chunk*.{self.output_extension}'))
-        for file in files:
-            concat_file.write(f"file '{os.path.basename(file)}'\n")
+        for i in range(self.ii):
+            concat_file.write(f"file '{os.path.join(self.tempdir, f'stream-copy-chunk{i+1}.{self.output_extension}')}'\n")
 
         concat_file.close()
 
@@ -447,7 +449,7 @@ class main:
         try:
             os.mkdir(self.tempdir)
         except FileExistsError:
-            self.tempcleanup()
+            main.tempcleanup()
             os.mkdir(self.tempdir)
 
     def cleanup():
