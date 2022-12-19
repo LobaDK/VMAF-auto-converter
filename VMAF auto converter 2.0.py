@@ -133,14 +133,22 @@ class main:
             self.start_frame = self.end_frame + 1
             self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')))
 
+        self.start_frame = 0
         self.ii = 0
-        for self.chunk in self.chunks:
+        for self.i in range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency):
             self.ii += 1
             self.crf_value = self.initial_crf_value
             self.attempt = 0 #reset attempts after each file
+
+            if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
+                self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
+            else:
+                self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
+
             while True:
                 if self.split():
                     if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
+                        self.start_frame = self.end_frame + 1
                         break
                     else:
                         continue
@@ -261,18 +269,18 @@ class main:
         
         print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}\n')
 
-        arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
+        arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
         arg[0:0] = self.arg_start
         p1 = subprocess.run(arg)
         if p1.returncode != 0:
             print('Error converting video!')
-            return False
+            exit(1)
         print(f'\nFinished processing chunk {self.ii}!')
 
         if self.attempt >= self.max_attempts:
             print('\nMaximum amount of allowed attempts exceeded. skipping...')
             time.sleep(2)
-            return
+            return False
         self.attempt += 1
         return True
 
