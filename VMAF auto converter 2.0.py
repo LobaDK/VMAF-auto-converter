@@ -36,7 +36,6 @@ class main:
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
         self.max_attempts = 10 # Change this to set the max amount of allowed retries before continuing to the next file/chunk
-        self.use_multipass_encoding = False # Change to True if ffmpeg should use multi-pass encoding. CRF mode in SVT-AV1 barely benefits from it, while doubling the encoding time
         self.initial_crf_value = 44 # Change this to set the default CRF value for ffmpeg to start converting with
         self.audio_bitrate = '192k'
         self.detect_audio_bitrate = False
@@ -190,32 +189,14 @@ class main:
         while True:
 
             self.crf_step = self.initial_crf_step
-            if self.use_multipass_encoding:
-                arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '1', '-f', 'null', self.pass_1_output]
-                arg[0:0] = self.arg_start
-                print('\nPerforming pass-1 encoding...\n')
-                multipass_p1 = subprocess.run(arg)
-                if multipass_p1.returncode == 0: # Skip on error
-                    arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', '-pass', '2', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
-                    arg[0:0] = self.arg_start
-                    print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
-                    multipass_p2 = subprocess.run(arg)
-                    if multipass_p2.returncode != 0: # Skip on error
-                        print('\nError converting pass-2 video!')
-                        break
-                    print('\nPass-2 encoding finished!')
-                else:
-                    print('\nError converting pass-1 video!')
-                    break
-            else:
-                arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
-                arg[0:0] = self.arg_start
-                print('\nPerforming video encode...\n')
-                p1 = subprocess.run(arg)
-                if p1.returncode != 0: # Skip on error
-                    print('\nError converting video!')
-                    break
-                print('\nVideo encoding finished!')
+            arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg[0:0] = self.arg_start
+            print('\nPerforming video encode...\n')
+            p1 = subprocess.run(arg)
+            if p1.returncode != 0: # Skip on error
+                print('\nError converting video!')
+                break
+            print('\nVideo encoding finished!')
             
             if self.attempt >= self.max_attempts:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
@@ -278,32 +259,15 @@ class main:
     def split(self):
         self.crf_step = self.initial_crf_step
         
-        print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}')
+        print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}\n')
 
-        if self.use_multipass_encoding:
-            arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
-            arg[0:0] = self.arg_start
-            print('\nPerforming pass-1 encoding...\n')
-            multipass_p1 = subprocess.run(arg)
-            if multipass_p1.returncode == 0:
-                arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
-                arg[0:0] = self.arg_start
-                multipass_p2 = subprocess.run(arg)
-                print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
-                if multipass_p2.returncode != 0:
-                    return False
-                print('\nPass-2 encoding finished!')
-            else:
-                return False
-        else:
-            arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
-            arg[0:0] = self.arg_start
-            print('\nPerforming video encode...\n')
-            p1 = subprocess.run(arg)
-            if p1.returncode != 0:
-                print('Error converting video!')
-                return False
-            print('\nVideo encoding finished!')
+        arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
+        arg[0:0] = self.arg_start
+        p1 = subprocess.run(arg)
+        if p1.returncode != 0:
+            print('Error converting video!')
+            return False
+        print(f'\nFinished processing chunk {self.ii}!')
 
         if self.attempt >= self.max_attempts:
             print('\nMaximum amount of allowed attempts exceeded. skipping...')
