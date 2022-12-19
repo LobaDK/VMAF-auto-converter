@@ -42,7 +42,7 @@ class main:
         self.detect_audio_bitrate = False
 
         #VMAF parameters:
-        self.VMAF_min_value = 90 # Change this to determine the minimum allowed VMAF quality
+        self.VMAF_min_value = 90.5 # Change this to determine the minimum allowed VMAF quality
         self.VMAF_max_value = 93 # Change this to determine the maximum allowed VMAF quality
         self.VMAF_offset_threshold = 2 # Change this to determine how much the VMAF value can deviate from the minimum and maximum values, before it starts to exponentially inecrease the CRF value (crf_step is increased by 1 for every time the value is VMAF_offset_threshold off from the minimum or maxumum VMAF value)
                                     #^
