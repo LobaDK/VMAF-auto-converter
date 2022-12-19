@@ -7,6 +7,7 @@ import signal
 import math
 import shutil
 import tempfile
+import tqdm
 
 class main:
     def signal_handler(sig, frame):
@@ -114,33 +115,40 @@ class main:
         if self.detected_audio_stream:
             self.ExtractAudio()
 
+        print('\nPreparing chunks...\n')
+        self.chunks = []
         self.start_frame = 0
         self.ii = 0
-        for self.i in range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency):
+        for self.i in tqdm.tqdm(range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency)):
+            self.ii += 1
+            if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
+                self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
+            else:
+                self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
+            
+            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))], stderr=subprocess.DEVNULL)
+            
+            if p.returncode != 0:
+                print(f'\nError preparing chunk {self.ii}')
+                exit(1)
+            self.start_frame = self.end_frame + 1
+            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')))
+
+        self.ii = 0
+        for self.chunk in self.chunks:
             self.ii += 1
             self.crf_value = self.initial_crf_value
             self.attempt = 0 #reset attempts after each file
-            
-            if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
-                self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
-                last_chunk = False
-            else:
-                self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
-                last_chunk = True
-            
             while True:
                 if self.split():
-                    if self.checkVMAF(os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')):
-                        if not last_chunk:
-                            self.start_frame = self.end_frame + 1
-                            break
-                        else:
-                            self.concat()
-                            break
+                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
+                        break
                     else:
                         continue
                 else:
                     break
+        
+        self.concat()
 
     def chunk_split(self):
 
@@ -163,7 +171,7 @@ class main:
             
             while True:
                 if self.split():
-                    if self.checkVMAF(os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')):
+                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
                         if not self.ii >= 5:
                             self.start_frame = self.end_frame + 1
                             break
@@ -222,7 +230,7 @@ class main:
 
     def checkVMAF(self, output_filename : str):
         print('\ncomparing video quality...\n')
-        arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+        arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
         arg[0:0] = self.arg_start
         subprocess.run(arg)
         with open('log.json') as f: # Open the json file.
@@ -270,22 +278,15 @@ class main:
     def split(self):
         self.crf_step = self.initial_crf_step
         
-        print(f'\nCutting from frame {self.start_frame} to frame {self.end_frame}')
-
-        if not os.path.exists(os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}')):
-            print('\nPreparing chunk...')
-            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'copy', '-an', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}')], stderr=subprocess.DEVNULL)
-            if p.returncode != 0:
-                print('Error preparing chunk!')
-                exit(1)
+        print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}')
 
         if self.use_multipass_encoding:
-            arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
+            arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
             arg[0:0] = self.arg_start
             print('\nPerforming pass-1 encoding...\n')
             multipass_p1 = subprocess.run(arg)
             if multipass_p1.returncode == 0:
-                arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+                arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
                 arg[0:0] = self.arg_start
                 multipass_p2 = subprocess.run(arg)
                 print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
@@ -295,7 +296,7 @@ class main:
             else:
                 return False
         else:
-            arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+            arg = ['-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
             arg[0:0] = self.arg_start
             print('\nPerforming video encode...\n')
             p1 = subprocess.run(arg)
@@ -313,9 +314,8 @@ class main:
 
     def concat(self):
         concat_file = open(os.path.join(self.tempdir, 'concatlist.txt'), 'a')
-        files = glob.glob(os.path.join(self.tempdir, f'chunk*.{self.output_extension}'))
         for i in range(self.ii):
-            concat_file.write(f"file '{os.path.join(self.tempdir, f'stream-copy-chunk{i+1}.{self.output_extension}')}'\n")
+            concat_file.write(f"file '{os.path.join(self.tempdir, os.path.join('converted', f'chunk{i+1}.{self.output_extension}'))}'\n")
 
         concat_file.close()
 
@@ -448,9 +448,13 @@ class main:
     def CreateTempFolder(self):
         try:
             os.mkdir(self.tempdir)
+            os.mkdir(os.path.join(self.tempdir, 'prepared'))
+            os.mkdir(os.path.join(self.tempdir, 'converted'))
         except FileExistsError:
             main.tempcleanup()
             os.mkdir(self.tempdir)
+            os.mkdir(os.path.join(self.tempdir, 'prepared'))
+            os.mkdir(os.path.join(self.tempdir, 'converted'))
 
     def cleanup():
         print('Cleaning up...')
