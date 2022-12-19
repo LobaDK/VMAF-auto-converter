@@ -211,7 +211,7 @@ class main:
             
             if self.attempt >= self.max_attempts:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
-                time.sleep(2)
+                time.sleep(2)   
                 return
             self.attempt += 1
 
@@ -280,12 +280,12 @@ class main:
                 exit(1)
 
         if self.use_multipass_encoding:
-            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
+            arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '1', '-f', 'null', self.pass_1_output]
             arg[0:0] = self.arg_start
             print('\nPerforming pass-1 encoding...\n')
             multipass_p1 = subprocess.run(arg)
             if multipass_p1.returncode == 0:
-                arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+                arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), '-pass', '2', os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
                 arg[0:0] = self.arg_start
                 multipass_p2 = subprocess.run(arg)
                 print('\nPass-1 encoding finished! Performing pass-2 encoding...\n')
@@ -295,7 +295,7 @@ class main:
             else:
                 return False
         else:
-            arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
+            arg = ['-i', os.path.join(self.tempdir, f'stream-copy-chunk{self.ii}.{self.output_extension}'), '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, f'chunk{self.ii}.{self.output_extension}')]
             arg[0:0] = self.arg_start
             print('\nPerforming video encode...\n')
             p1 = subprocess.run(arg)
