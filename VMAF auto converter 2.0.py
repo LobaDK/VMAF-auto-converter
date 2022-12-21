@@ -50,9 +50,9 @@ class main:
                                     #^
                                     # Decimal numbers are not supported
         self.VMAF_offset_multiplication = 1.3 # Change this to determine how much it should multiply the CRF, based on the difference between the VMAF_min or max value, and the vmaf_value. 2 and above is considered too aggressive, and will overshoot way too much
-        self.VMAF_offset_mode = 1 # Change this to set the VMAF mode used to calculate exponential increase/decrease. 0 for threshold based increase, any other number for multiplication based increase
+        self.VMAF_offset_mode = 1 # Change this to set the VMAF mode used to calculate exponential increase/decrease. 0 for threshold based increase, 1 for multiplication based increase
         # 0 (threshold based) is less aggressive, and will use more attempts as it's exponential increase is limited, but can also be slightly more accurate. Very good for low deviations
-        # Secondary option (multiplication based) is way more aggressive, but also more flexible, resulting in less attempts, but can also over- and undershoot the target, and may be less accurate. Very good for high deviations
+        # 1 (multiplication based) is way more aggressive, but also more flexible, resulting in less attempts, but can also over- and undershoot the target, and may be less accurate. Very good for high deviations
         # If the VMAF offset is 5 or more, it will automatically switch to a multiplication based exponential increase regardless of user settings
         self.initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
 
@@ -74,7 +74,104 @@ class main:
             self.pass_1_output = '/dev/null'
 
         self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
+
+        self.InitCheck()
     
+    def InitCheck(self):
+        param_issues = []
+        if not isinstance(self.input_dir, str):
+            param_issues.append('Input_dir is not a string')
+        elif not self.input_dir:
+            param_issues.append('No specified input folder')
+        if not isinstance(self.output_dir, str):
+            param_issues.append('output_dir is not a string, or is not specified')
+        elif not self.output_dir:
+            param_issues.append('No specified output folder')
+        if isinstance(self.input_dir, str) and isinstance(self.output_dir, str) and self.input_dir == self.output_dir:
+            param_issues.append('Input and output folder cannot be the same')
+
+        if not isinstance(self.input_extension, str):
+            param_issues.append('Input_extension is not a string')
+        elif not self.input_extension:
+            param_issues.append('No specified input extension')
+        if not isinstance(self.output_extension, str):
+            param_issues.append('Output_extension is not a string')
+        elif not self.output_extension:
+            param_issues.append('No specified output extension')
+
+        if not isinstance(self.use_intro, bool):
+            param_issues.append('Use_intro is not True, False, 0 or 1')
+        elif self.use_intro and not isinstance(self.intro_file, str):
+            param_issues.append('Intro enabled but intro_file is not a string')
+        elif self.use_intro and not self.intro_file:
+            param_issues.append('Intro enabled but no intro file specified')
+        if not isinstance(self.use_outro, bool):
+            param_issues.append('Use_outro is not True, False, 0 or 1')
+        elif self.use_outro and not isinstance(self.outro_file, str):
+            param_issues.append('Outro enabled but outro_file is not a string')
+        elif self.use_outro and not self.outro_file:
+            param_issues.append('Outro enabled but no outro file specified')
+
+        if not isinstance(self.file_chunks, int):
+            param_issues.append('File_chunks is not a whole number')
+        if not isinstance(self.chunk_frequency, int):
+            param_issues.append('Chunk_frequency is not a whole number')
+        if not isinstance(self.file_chunking_mode, int):
+            param_issues.append('File_chunking_mode is not a whole number')
+        elif not 0 <= self.file_chunking_mode <= 2:
+            param_issues.append('File_chunking_mode is out of range (0-2)')
+        
+        if not isinstance(self.AV1_preset, int):
+            param_issues.append('AV1 preset is not a whole number')
+        if not isinstance(self.max_attempts, int):
+            param_issues.append('Max_attempts is not a whole number')
+        if not isinstance(self.initial_crf_value, int):
+            param_issues.append('Initial_crf_value is not a whole number')
+        elif not 1 <= self.initial_crf_value <= 63:
+            param_issues.append('Initial_crf_value is out of range (1-63)')
+        if not isinstance(self.audio_bitrate, (int, str)):
+            param_issues.append('Audio_bitrate is not a string or whole number')
+        if not isinstance(self.detect_audio_bitrate, bool):
+            param_issues.append('Detect_audio_bitrate is not True, False, 0 or 1')
+        if not isinstance(self.pixel_format, str):
+            param_issues.append('Pixel_format is not a string')
+        if not isinstance(self.tune_mode, int):
+            param_issues.append('Tune_mode is not a whole number')
+        elif not 0 <= self.tune_mode <= 1:
+            param_issues.append('Tune_mode is out of range (0-1)')
+        if not isinstance(self.GOP_size, int):
+            param_issues.append('GOP_size is not a whole number')
+        
+        if not isinstance(self.VMAF_min_value, (int, float)):
+            param_issues.append('VMAF_min_value is not a whole or decimal number')
+        elif not 0 <= self.VMAF_min_value <= 100:
+            param_issues.append('VMAF_min_value is not in range (0-100)')
+        if not isinstance(self.VMAF_max_value, (int, float)):
+            param_issues.append('VMAF_max_value is not a whole or decimal number')
+        elif not 0 <= self.VMAF_max_value <= 100:
+            param_issues.append('VMAF_max_value is not in range (0-100)')
+        if isinstance(self.VMAF_min_value, (int, float)) and isinstance(self.VMAF_max_value, (int, float)) and self.VMAF_min_value > self.VMAF_max_value:
+            param_issues.append('VMAF_min_value is higher than VMAF_max_value')
+        if not isinstance(self.VMAF_offset_threshold, int):
+            param_issues.append('VMAF_offset_threshold is not a whole number')
+        if not isinstance(self.VMAF_offset_multiplication, (int, float)):
+            param_issues.append('VMAF_offset_multiplication is not a whole or decimal number')
+        if not isinstance(self.VMAF_offset_mode, int):
+            param_issues.append('VMAF_offset_mode is not a whole number')
+        elif not 0 <= self.VMAF_offset_mode <= 1:
+            param_issues.append('VMAF_offset_mode is not in range (0-1)')
+        if not isinstance(self.initial_crf_step, int):
+            param_issues.append('Initial_crf_step is not a whole number')
+
+        if not isinstance(self.ffmpeg_verbose_level, int):
+            param_issues.append('FFmpeg_verbose_level is not a whole number')
+        elif not 0 <= self.ffmpeg_verbose_level <= 2:
+            param_issues.append('FFmpeg_verbose_level is not in range (0-2)')
+        
+        if param_issues:
+            print('\n'.join(param_issues))
+            exit(1)
+            
     def main(self):
         try:
             os.mkdir(self.output_dir)
