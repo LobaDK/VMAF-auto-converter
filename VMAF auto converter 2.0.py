@@ -167,7 +167,24 @@ class main:
         
         if self.detected_audio_stream:
             self.ExtractAudio()
+        
+        print('\nPreparing chunks...\n')
+        self.chunks = []
+        self.start_frame = 0
+        self.ii = 0
+        for self.i in tqdm.tqdm(range(self.file_chunks)):
+            self.ii += 1
+            self.crf_value = self.initial_crf_value
+            self.attempt = 0 #reset attempts after each file
+            self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
+            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))], stderr=subprocess.DEVNULL)
             
+            if p.returncode != 0:
+                print(f'\nError preparing chunk {self.ii}')
+                exit(1)
+            self.start_frame = self.end_frame + 1
+            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')))
+        
         self.start_frame = 0
         self.ii = 0
         for self.i in range(self.file_chunks):
@@ -177,6 +194,7 @@ class main:
             self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
             
             while True:
+
                 if self.split():
                     if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
                         if not self.ii >= 5:
@@ -221,7 +239,10 @@ class main:
         print('\ncomparing video quality...\n')
         arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
         arg[0:0] = self.arg_start
-        subprocess.run(arg)
+        p = subprocess.run(arg)
+        if p.returncode != 0:
+            print('\nError comparing quality!')
+            exit(1)
         with open('log.json') as f: # Open the json file.
             self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
