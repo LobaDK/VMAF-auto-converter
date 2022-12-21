@@ -31,7 +31,7 @@ class main:
         #File chunking parameters:
         self.file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks. file_chunking_mode = 1
         self.chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
-        self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into (file_chunk) amount, 2 = Split file into (chunk_frequncy) seconds long chunks
+        self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into N file_chunks amount, 2 = Split file into N chunk_frequency second long chunks
 
         #Encoding parameters:
         self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
@@ -39,6 +39,9 @@ class main:
         self.initial_crf_value = 44 # Change this to set the default CRF value for ffmpeg to start converting with
         self.audio_bitrate = '192k'
         self.detect_audio_bitrate = False
+        self.pixel_format = 'yuv420p10le' # Pixel format for the output. yuv420p for 8-bit, yuv420p10le for 10-bit. 10-bit can slightly boost quality, especially with minimizing color banding, but can increase encoder and decoder complexity
+        self.tune_mode = 0 # Tune mode for the encoder. 0 = VQ (subjective measuring), 1 = PSNR (objective measuring). Subjective measuring can produce sharper frames and results that appear higher quality to human vision
+        self.GOP_size = 300 # Group Of Pictures, or keyframe size. i.e. every N GOP_size, add a keyframe. if fps is 60 and GOP_size is 300, a keyframe will be added every 5 seconds
 
         #VMAF parameters:
         self.VMAF_min_value = 90.5 # Change this to determine the minimum allowed VMAF quality
@@ -125,9 +128,11 @@ class main:
             else:
                 self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
             
-            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))], stderr=subprocess.DEVNULL)
+            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))]
+            p = subprocess.run(arg, stderr=subprocess.DEVNULL)
             
             if p.returncode != 0:
+                print(" ".join(arg))
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
             self.start_frame = self.end_frame + 1
@@ -177,9 +182,11 @@ class main:
             self.crf_value = self.initial_crf_value
             self.attempt = 0 #reset attempts after each file
             self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
-            p = subprocess.run(['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))], stderr=subprocess.DEVNULL)
+            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))]
+            p = subprocess.run(arg, stderr=subprocess.DEVNULL)
             
             if p.returncode != 0:
+                print(" ".join(arg))
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
             self.start_frame = self.end_frame + 1
@@ -215,7 +222,7 @@ class main:
         while True:
 
             self.crf_step = self.initial_crf_step
-            arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', str(self.AV1_preset), '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', str(self.GOP_size), '-preset', str(self.AV1_preset), '-pix_fmt', self.pixel_format, '-svtav1-params', f'tune={str(self.tune_mode)}', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
             arg[0:0] = self.arg_start
             print('\nPerforming video encode...\n')
             p1 = subprocess.run(arg)
@@ -237,10 +244,14 @@ class main:
 
     def checkVMAF(self, output_filename : str):
         print('\ncomparing video quality...\n')
-        arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+        if self.file_chunking_mode != 0:
+            arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+        else:
+            arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
         arg[0:0] = self.arg_start
         p = subprocess.run(arg)
         if p.returncode != 0:
+            print(" ".join(arg))
             print('\nError comparing quality!')
             exit(1)
         with open('log.json') as f: # Open the json file.
@@ -296,10 +307,11 @@ class main:
         
         print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}\n')
 
-        arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', '600', '-preset', str(self.AV1_preset), os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
+        arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', str(self.GOP_size), '-preset', str(self.AV1_preset), '-pix_fmt', self.pixel_format, '-svtav1-params', f'tune={str(self.tune_mode)}', os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
         arg[0:0] = self.arg_start
         p1 = subprocess.run(arg)
         if p1.returncode != 0:
+            print(" ".join(arg))
             print('Error converting video!')
             exit(1)
         print(f'\nFinished processing chunk {self.ii}!')
@@ -340,15 +352,18 @@ class main:
         print('\nExtracting audio...\n')
         audio_extract = subprocess.run(arg)
         if audio_extract.returncode != 0:
+            print(" ".join(arg))
             print('\nError extracting audio track!')
             exit(1)
 
     def GetVideoMetadata(self, output_filename):
         try:
-            video_stream = subprocess.Popen(['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', output_filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', output_filename]
+            video_stream = subprocess.Popen(arg, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = video_stream.communicate()
             self.video_metadata = json.loads(stdout)['streams'][0]
         except IndexError:
+            print(" ".join(arg))
             print('\nNo video stream detected!')
             exit(1)
         else:
