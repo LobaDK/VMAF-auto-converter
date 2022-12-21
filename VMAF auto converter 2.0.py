@@ -19,8 +19,8 @@ class main:
     def __init__(self):
         #Input & output parameters:
         self.input_dir = 'lossless' # Change this to set a custom input directory. Dot can be used to specify same directory as the script
-        self.output_dir = 'AV1' # Change this to set a custom input directory. Dot can be used to specify same directory as the script
-        # Changing both to a dot is not adviced since the original filename is reused in the output, meaning if they share the same extension, ffmpeg will either outright fail, or the script can delete the input file
+        self.output_dir = 'AV1' # Change this to set a custom output directory. Dot can be used to specify same directory as the script
+        # Changing both to the same directory is not adviced since the original filename is reused in the output, meaning if they share the same extension, ffmpeg will either outright fail, or the script can delete the input file
         self.input_extension = 'mp4' # Change this to set the container type that should be converted. A * (wildcard) can instead be used to ignore container type, but make sure there's only video files in the given directory then 
         self.output_extension = 'mp4' # Can be changed to another extension, but only recommended if the encoder codec has been changed to another one
         self.use_intro = False
@@ -123,6 +123,8 @@ class main:
         
         if not isinstance(self.AV1_preset, int):
             param_issues.append('AV1 preset is not a whole number')
+        elif not 0 <= self.AV1_preset <= 12:
+            param_issues.append('AV1_preset is out of range (0-12')
         if not isinstance(self.max_attempts, int):
             param_issues.append('Max_attempts is not a whole number')
         if not isinstance(self.initial_crf_value, int):
