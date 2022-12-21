@@ -239,6 +239,9 @@ class main:
                 print(f'Retrying with a CRF decrease of {self.crf_step}. New CRF: ({self.crf_value - self.crf_step})...')
                 time.sleep(2)
                 self.crf_value -= self.crf_step
+                if not 1 <= self.crf_value <= 63:
+                    print('CRF value out of range (1-63). Skipping...')
+                    return True #Return True instead of False to skip the file and continue with the next one
                 os.remove(output_filename) # Delete converted file to avoid FFmpeg skipping it
 
             elif self.vmaf_value > self.VMAF_max_value: # If VMAF value is above the maximum range
@@ -254,6 +257,9 @@ class main:
                 print(f'Retrying with a CRF increase of {self.crf_step}. New CRF: ({self.crf_value + self.crf_step})...')
                 time.sleep(2)
                 self.crf_value += self.crf_step
+                if not 1 <= self.crf_value <= 63:
+                    print('CRF value out of range (1-63). Skipping...')
+                    return True #Return True instead of False to skip the file and continue with the next one
                 os.remove(output_filename) # Delete converted file to avoid FFmpeg skipping it
                 
             return False
