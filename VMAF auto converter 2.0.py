@@ -8,6 +8,7 @@ import math
 import shutil
 import tempfile
 import tqdm
+import argparse
 
 class main:
     def signal_handler(sig, frame):
@@ -17,44 +18,46 @@ class main:
     signal.signal(signal.SIGINT, signal_handler)
 
     def __init__(self):
+        parser = argparse.ArgumentParser(description='AV1 converter script using VMAF to control the quality', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        
         #Input & output parameters:
-        self.input_dir = 'lossless' # Change this to set a custom input directory. Dot can be used to specify same directory as the script
-        self.output_dir = 'AV1' # Change this to set a custom output directory. Dot can be used to specify same directory as the script
+        input_dir = 'lossless' # Change this to set a custom input directory. Dot can be used to specify same directory as the script
+        output_dir = 'AV1' # Change this to set a custom output directory. Dot can be used to specify same directory as the script
         # Changing both to the same directory is not adviced since the original filename is reused in the output, meaning if they share the same extension, ffmpeg will either outright fail, or the script can delete the input file
-        self.input_extension = 'mp4' # Change this to set the container type that should be converted. A * (wildcard) can instead be used to ignore container type, but make sure there's only video files in the given directory then 
-        self.output_extension = 'mp4' # Can be changed to another extension, but only recommended if the encoder codec has been changed to another one
-        self.use_intro = False
-        self.use_outro = False
-        self.intro_file = r''
-        self.outro_file = r''
+        input_extension = 'mp4' # Change this to set the container type that should be converted. A * (wildcard) can instead be used to ignore container type, but make sure there's only video files in the given directory then 
+        output_extension = 'mp4' # Can be changed to another extension, but only recommended if the encoder codec has been changed to another one
+        use_intro = False
+        use_outro = False
+        intro_file = r''
+        outro_file = r''
 
         #File chunking parameters:
-        self.file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks. file_chunking_mode = 1
-        self.chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
-        self.file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into N file_chunks amount, 2 = Split file into N chunk_frequency second long chunks
+        file_chunks = 5 # Change this to determine how many times the input video should be split, divided in equal chunks. file_chunking_mode = 1
+        chunk_frequency = 10 # Change this to determine how long the video chunks should be in seconds. file_chunking_mode = 2
+        file_chunking_mode = 2 # 0 = Disabled, 1 = Split file into N file_chunks amount, 2 = Split file into N chunk_frequency second long chunks
 
         #Encoding parameters:
-        self.AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
-        self.max_attempts = 10 # Change this to set the max amount of allowed retries before continuing to the next file/chunk
-        self.initial_crf_value = 44 # Change this to set the default CRF value for ffmpeg to start converting with
-        self.audio_bitrate = '192k'
-        self.detect_audio_bitrate = False
-        self.pixel_format = 'yuv420p10le' # Pixel format for the output. yuv420p for 8-bit, yuv420p10le for 10-bit. 10-bit can slightly boost quality, especially with minimizing color banding, but can increase encoder and decoder complexity
-        self.tune_mode = 0 # Tune mode for the encoder. 0 = VQ (subjective measuring), 1 = PSNR (objective measuring). Subjective measuring can produce sharper frames and results that appear higher quality to human vision
-        self.GOP_size = 300 # Group Of Pictures, or keyframe size. i.e. every N GOP_size, add a keyframe. if fps is 60 and GOP_size is 300, a keyframe will be added every 5 seconds
+        AV1_preset = 6 # Preset level for AV1 encoder, supporting levels 1-8. Lower means smaller size + same or higher quality, but also goes exponentially slower, the lower the number is. 6 is a good ratio between size/quality and time
+        max_attempts = 10 # Change this to set the max amount of allowed retries before continuing to the next file/chunk
+        initial_crf_value = 44 # Change this to set the default CRF value for ffmpeg to start converting with
+        audio_bitrate = '192k'
+        detect_audio_bitrate = False
+        pixel_format = 'yuv420p10le' # Pixel format for the output. yuv420p for 8-bit, yuv420p10le for 10-bit. 10-bit can slightly boost quality, especially with minimizing color banding, but can increase encoder and decoder complexity
+        tune_mode = 0 # Tune mode for the encoder. 0 = VQ (subjective measuring), 1 = PSNR (objective measuring). Subjective measuring can produce sharper frames and results that appear higher quality to human vision
+        GOP_size = 300 # Group Of Pictures, or keyframe size. i.e. every N GOP_size, add a keyframe. if fps is 60 and GOP_size is 300, a keyframe will be added every 5 seconds
 
         #VMAF parameters:
-        self.VMAF_min_value = 90.5 # Change this to determine the minimum allowed VMAF quality
-        self.VMAF_max_value = 93 # Change this to determine the maximum allowed VMAF quality
-        self.VMAF_offset_threshold = 2 # Change this to determine how much the VMAF value can deviate from the minimum and maximum values, before it starts to exponentially inecrease the CRF value (crf_step is increased by 1 for every time the value is VMAF_offset_threshold off from the minimum or maxumum VMAF value)
+        VMAF_min_value = 90.5 # Change this to determine the minimum allowed VMAF quality
+        VMAF_max_value = 93 # Change this to determine the maximum allowed VMAF quality
+        VMAF_offset_threshold = 2 # Change this to determine how much the VMAF value can deviate from the minimum and maximum values, before it starts to exponentially inecrease the CRF value (crf_step is increased by 1 for every time the value is VMAF_offset_threshold off from the minimum or maxumum VMAF value)
                                     #^
                                     # Decimal numbers are not supported
-        self.VMAF_offset_multiplication = 1.3 # Change this to determine how much it should multiply the CRF, based on the difference between the VMAF_min or max value, and the vmaf_value. 2 and above is considered too aggressive, and will overshoot way too much
-        self.VMAF_offset_mode = 1 # Change this to set the VMAF mode used to calculate exponential increase/decrease. 0 for threshold based increase, 1 for multiplication based increase
+        VMAF_offset_multiplication = 1.3 # Change this to determine how much it should multiply the CRF, based on the difference between the VMAF_min or max value, and the vmaf_value. 2 and above is considered too aggressive, and will overshoot way too much
+        VMAF_offset_mode = 1 # Change this to set the VMAF mode used to calculate exponential increase/decrease. 0 for threshold based increase, 1 for multiplication based increase
         # 0 (threshold based) is less aggressive, and will use more attempts as it's exponential increase is limited, but can also be slightly more accurate. Very good for low deviations
         # 1 (multiplication based) is way more aggressive, but also more flexible, resulting in less attempts, but can also over- and undershoot the target, and may be less accurate. Very good for high deviations
         # If the VMAF offset is 5 or more, it will automatically switch to a multiplication based exponential increase regardless of user settings
-        self.initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
+        initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
 
         #Verbosity parameters:
         self.ffmpeg_verbose_level = 1 # 0 = Display none of ffmpeg's output, 1 = Display only ffmpeg stats, 2 = Display ffmpeg stats and encoder-specific information
@@ -75,11 +78,34 @@ class main:
 
         self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
 
+        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, type=str, help='Absolute or relative path to the files')
+        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, type=str, help='Absolute or relative path to where the file should be written')
+        parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, type=str, help='Container extension to convert from. Use * to specify all')
+        parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=output_extension, type=str, help='Container extension to convert to')
+        parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=use_intro, type=bool, help='Add intro')
+        parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=use_outro, type=bool, help='Add outro')
+        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=intro_file, type=str, help='Absolute or relative path to the intro file, including filename')
+        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=outro_file, type=str, help='Absolute or relative path to the outro file, including filename')
+        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='file_chunking_mode', default=file_chunking_mode, type=int, help='Disable, split N amount of times, or split into N second long chunks')
+        parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='file_chunks', default=file_chunks, type=int, help='How many chunks the video should be divided into')
+        parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_frequency', default=chunk_frequency, type=int, help='Chunk duration in seconds')
+        parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='AV1_preset', default=AV1_preset, type=int, help='Encoding preset for the AV1 encoder')
+        parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=max_attempts, type=int, help='Max attempts before the script skips (but keeps) the file')
+        parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=initial_crf_value, type=int, help='Encoder CRF value to be used')
+        parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=audio_bitrate, type=str, help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits')
+        parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=detect_audio_bitrate, type=int, help='If the script should detect and instead use the audio bitrate from input file')
+        parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=pixel_format, type=str, help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit')
+        parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=tune_mode, type=int, help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)')
+        parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='GOP_size', default=GOP_size, type=int, help='Encoder keyframe interval in frames')
+        parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='VMAF_min_value', default=VMAF_min_value, help='Minimum allowed quality for the output file, calculated using VMAF. Allows decimal for precision')
+        parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='VMAF_max_value', default=VMAF_max_value, help='Maximum allowed quality for the output file, calculated using VMAF. Allows decimal for precision')
+        self.args = parser.parse_args()
+
         self.InitCheck()
     
     def InitCheck(self):
         param_issues = []
-        if not isinstance(self.input_dir, str):
+        if not isinstance(self.args.input_dir, str):
             param_issues.append('Input_dir is not a string')
         elif not self.input_dir:
             param_issues.append('No specified input folder')
