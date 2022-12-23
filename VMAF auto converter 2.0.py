@@ -60,11 +60,44 @@ class main:
         initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
 
         #Verbosity parameters:
-        self.ffmpeg_verbose_level = 1 # 0 = Display none of ffmpeg's output, 1 = Display only ffmpeg stats, 2 = Display ffmpeg stats and encoder-specific information
+        self.ffmpeg_verbose_level = 2 # 1 = Display none of ffmpeg's output, 2 = Display only ffmpeg stats, 3 = Display ffmpeg stats and encoder-specific information
 
-        if self.ffmpeg_verbose_level == 0:
+
+        self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
+
+        parser.add_argument('-v', '--verbosity', action='count', default=self.ffmpeg_verbose_level, help='V = hide, VV = basic, VVV = full')
+        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, help='Absolute or relative path to the files')
+        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, help='Absolute or relative path to where the file should be written')
+        parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, help='Container extension to convert from. Use * to specify all')
+        parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=output_extension, help='Container extension to convert to')
+        parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=use_intro, help='Add intro')
+        parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=use_outro, help='Add outro')
+        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=intro_file, help='Absolute or relative path to the intro file, including filename')
+        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=outro_file, help='Absolute or relative path to the outro file, including filename')
+        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='file_chunking_mode', default=file_chunking_mode, help='Disable, split N amount of times, or split into N second long chunks')
+        parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='file_chunks', default=file_chunks, help='How many chunks the video should be divided into')
+        parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_frequency', default=chunk_frequency, help='Chunk duration in seconds')
+        parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='AV1_preset', default=AV1_preset, help='Encoding preset for the AV1 encoder')
+        parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=max_attempts, help='Max attempts before the script skips (but keeps) the file')
+        parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=initial_crf_value, help='Encoder CRF value to be used')
+        parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=audio_bitrate, help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits')
+        parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=detect_audio_bitrate, help='If the script should detect and instead use the audio bitrate from input file')
+        parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=pixel_format, help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit')
+        parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=tune_mode, help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)')
+        parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='GOP_size', default=GOP_size, help='Encoder keyframe interval in frames')
+        parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='VMAF_min_value', default=VMAF_min_value, help='Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision')
+        parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='VMAF_max_value', default=VMAF_max_value, help='Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision')
+        parser.add_argument('-vomode', '--vmaf-offset-mode', metavar='0-1', dest='VMAF_offset_mode', default=VMAF_offset_mode, help='Algorithm to use to exponentially adjust the CRF value. 0 = standard and slow threshold-based, 1 = aggressive but can overshoot multiplier-based')
+        parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='VMAF_offset_threshold', default=VMAF_offset_threshold, help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease')
+        parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='VMAF_offset_multiplication', default=VMAF_offset_multiplication, help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value')
+        parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=initial_crf_step, help='How much it should adjust the CRF value on each retry')
+        self.args = parser.parse_args()
+
+        self.InitCheck()
+
+        if self.ffmpeg_verbose_level == 1:
             self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet']
-        elif self.ffmpeg_verbose_level == 1:
+        elif self.ffmpeg_verbose_level == 2:
             self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet', '-stats']
         else:
             self.arg_start = ['ffmpeg', '-n']
@@ -75,125 +108,98 @@ class main:
             self.pass_1_output = 'NUL'
         else:
             self.pass_1_output = '/dev/null'
-
-        self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
-
-        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, type=str, help='Absolute or relative path to the files')
-        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, type=str, help='Absolute or relative path to where the file should be written')
-        parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, type=str, help='Container extension to convert from. Use * to specify all')
-        parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=output_extension, type=str, help='Container extension to convert to')
-        parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=use_intro, type=bool, help='Add intro')
-        parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=use_outro, type=bool, help='Add outro')
-        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=intro_file, type=str, help='Absolute or relative path to the intro file, including filename')
-        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=outro_file, type=str, help='Absolute or relative path to the outro file, including filename')
-        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='file_chunking_mode', default=file_chunking_mode, type=int, help='Disable, split N amount of times, or split into N second long chunks')
-        parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='file_chunks', default=file_chunks, type=int, help='How many chunks the video should be divided into')
-        parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_frequency', default=chunk_frequency, type=int, help='Chunk duration in seconds')
-        parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='AV1_preset', default=AV1_preset, type=int, help='Encoding preset for the AV1 encoder')
-        parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=max_attempts, type=int, help='Max attempts before the script skips (but keeps) the file')
-        parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=initial_crf_value, type=int, help='Encoder CRF value to be used')
-        parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=audio_bitrate, type=str, help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits')
-        parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=detect_audio_bitrate, type=int, help='If the script should detect and instead use the audio bitrate from input file')
-        parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=pixel_format, type=str, help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit')
-        parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=tune_mode, type=int, help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)')
-        parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='GOP_size', default=GOP_size, type=int, help='Encoder keyframe interval in frames')
-        parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='VMAF_min_value', default=VMAF_min_value, help='Minimum allowed quality for the output file, calculated using VMAF. Allows decimal for precision')
-        parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='VMAF_max_value', default=VMAF_max_value, help='Maximum allowed quality for the output file, calculated using VMAF. Allows decimal for precision')
-        self.args = parser.parse_args()
-
-        self.InitCheck()
-    
+        
     def InitCheck(self):
         param_issues = []
         if not isinstance(self.args.input_dir, str):
             param_issues.append('Input_dir is not a string')
-        elif not self.input_dir:
+        elif not self.args.input_dir:
             param_issues.append('No specified input folder')
-        if not isinstance(self.output_dir, str):
+        if not isinstance(self.args.output_dir, str):
             param_issues.append('output_dir is not a string, or is not specified')
-        elif not self.output_dir:
+        elif not self.args.output_dir:
             param_issues.append('No specified output folder')
-        if isinstance(self.input_dir, str) and isinstance(self.output_dir, str) and self.input_dir == self.output_dir:
+        if isinstance(self.args.input_dir, str) and isinstance(self.args.output_dir, str) and self.args.input_dir == self.args.output_dir:
             param_issues.append('Input and output folder cannot be the same')
 
-        if not isinstance(self.input_extension, str):
+        if not isinstance(self.args.input_extension, str):
             param_issues.append('Input_extension is not a string')
-        elif not self.input_extension:
+        elif not self.args.input_extension:
             param_issues.append('No specified input extension')
-        if not isinstance(self.output_extension, str):
+        if not isinstance(self.args.output_extension, str):
             param_issues.append('Output_extension is not a string')
-        elif not self.output_extension:
+        elif not self.args.output_extension:
             param_issues.append('No specified output extension')
 
-        if not isinstance(self.use_intro, bool):
+        if not isinstance(self.args.use_intro, bool):
             param_issues.append('Use_intro is not True, False, 0 or 1')
-        elif self.use_intro and not isinstance(self.intro_file, str):
+        elif self.args.use_intro and not isinstance(self.args.intro_file, str):
             param_issues.append('Intro enabled but intro_file is not a string')
-        elif self.use_intro and not self.intro_file:
+        elif self.args.use_intro and not self.args.intro_file:
             param_issues.append('Intro enabled but no intro file specified')
-        if not isinstance(self.use_outro, bool):
+        if not isinstance(self.args.use_outro, bool):
             param_issues.append('Use_outro is not True, False, 0 or 1')
-        elif self.use_outro and not isinstance(self.outro_file, str):
+        elif self.args.use_outro and not isinstance(self.args.outro_file, str):
             param_issues.append('Outro enabled but outro_file is not a string')
-        elif self.use_outro and not self.outro_file:
+        elif self.args.use_outro and not self.args.outro_file:
             param_issues.append('Outro enabled but no outro file specified')
 
-        if not isinstance(self.file_chunks, int):
+        if not isinstance(self.args.file_chunks, int):
             param_issues.append('File_chunks is not a whole number')
-        if not isinstance(self.chunk_frequency, int):
+        if not isinstance(self.args.chunk_frequency, int):
             param_issues.append('Chunk_frequency is not a whole number')
-        if not isinstance(self.file_chunking_mode, int):
+        if not isinstance(self.args.file_chunking_mode, int):
             param_issues.append('File_chunking_mode is not a whole number')
-        elif not 0 <= self.file_chunking_mode <= 2:
+        elif not 0 <= self.args.file_chunking_mode <= 2:
             param_issues.append('File_chunking_mode is out of range (0-2)')
         
-        if not isinstance(self.AV1_preset, int):
+        if not isinstance(self.args.AV1_preset, int):
             param_issues.append('AV1 preset is not a whole number')
-        elif not 0 <= self.AV1_preset <= 12:
+        elif not 0 <= self.args.AV1_preset <= 12:
             param_issues.append('AV1_preset is out of range (0-12')
-        if not isinstance(self.max_attempts, int):
+        if not isinstance(self.args.max_attempts, int):
             param_issues.append('Max_attempts is not a whole number')
-        if not isinstance(self.initial_crf_value, int):
+        if not isinstance(self.args.initial_crf_value, int):
             param_issues.append('Initial_crf_value is not a whole number')
-        elif not 1 <= self.initial_crf_value <= 63:
+        elif not 1 <= self.args.initial_crf_value <= 63:
             param_issues.append('Initial_crf_value is out of range (1-63)')
-        if not isinstance(self.audio_bitrate, (int, str)):
+        if not isinstance(self.args.audio_bitrate, (int, str)):
             param_issues.append('Audio_bitrate is not a string or whole number')
-        if not isinstance(self.detect_audio_bitrate, bool):
+        if not isinstance(self.args.detect_audio_bitrate, bool):
             param_issues.append('Detect_audio_bitrate is not True, False, 0 or 1')
-        if not isinstance(self.pixel_format, str):
+        if not isinstance(self.args.pixel_format, str):
             param_issues.append('Pixel_format is not a string')
-        if not isinstance(self.tune_mode, int):
+        if not isinstance(self.args.tune_mode, int):
             param_issues.append('Tune_mode is not a whole number')
-        elif not 0 <= self.tune_mode <= 1:
+        elif not 0 <= self.args.tune_mode <= 1:
             param_issues.append('Tune_mode is out of range (0-1)')
-        if not isinstance(self.GOP_size, int):
+        if not isinstance(self.args.GOP_size, int):
             param_issues.append('GOP_size is not a whole number')
         
-        if not isinstance(self.VMAF_min_value, (int, float)):
+        if not isinstance(self.args.VMAF_min_value, (int, float)):
             param_issues.append('VMAF_min_value is not a whole or decimal number')
-        elif not 0 <= self.VMAF_min_value <= 100:
+        elif not 0 <= self.args.VMAF_min_value <= 100:
             param_issues.append('VMAF_min_value is not in range (0-100)')
-        if not isinstance(self.VMAF_max_value, (int, float)):
+        if not isinstance(self.args.VMAF_max_value, (int, float)):
             param_issues.append('VMAF_max_value is not a whole or decimal number')
-        elif not 0 <= self.VMAF_max_value <= 100:
+        elif not 0 <= self.args.VMAF_max_value <= 100:
             param_issues.append('VMAF_max_value is not in range (0-100)')
-        if isinstance(self.VMAF_min_value, (int, float)) and isinstance(self.VMAF_max_value, (int, float)) and self.VMAF_min_value > self.VMAF_max_value:
+        if isinstance(self.args.VMAF_min_value, (int, float)) and isinstance(self.args.VMAF_max_value, (int, float)) and self.args.VMAF_min_value > self.args.VMAF_max_value:
             param_issues.append('VMAF_min_value is higher than VMAF_max_value')
-        if not isinstance(self.VMAF_offset_threshold, int):
+        if not isinstance(self.args.VMAF_offset_threshold, int):
             param_issues.append('VMAF_offset_threshold is not a whole number')
-        if not isinstance(self.VMAF_offset_multiplication, (int, float)):
+        if not isinstance(self.args.VMAF_offset_multiplication, (int, float)):
             param_issues.append('VMAF_offset_multiplication is not a whole or decimal number')
-        if not isinstance(self.VMAF_offset_mode, int):
+        if not isinstance(self.args.VMAF_offset_mode, int):
             param_issues.append('VMAF_offset_mode is not a whole number')
-        elif not 0 <= self.VMAF_offset_mode <= 1:
+        elif not 0 <= self.args.VMAF_offset_mode <= 1:
             param_issues.append('VMAF_offset_mode is not in range (0-1)')
-        if not isinstance(self.initial_crf_step, int):
+        if not isinstance(self.args.initial_crf_step, int):
             param_issues.append('Initial_crf_step is not a whole number')
 
         if not isinstance(self.ffmpeg_verbose_level, int):
             param_issues.append('FFmpeg_verbose_level is not a whole number')
-        elif not 0 <= self.ffmpeg_verbose_level <= 2:
+        elif not 1 <= self.ffmpeg_verbose_level <= 3:
             param_issues.append('FFmpeg_verbose_level is not in range (0-2)')
         
         if param_issues:
@@ -202,24 +208,24 @@ class main:
             
     def main(self):
         try:
-            os.mkdir(self.output_dir)
+            os.mkdir(self.args.output_dir)
         except FileExistsError:
             pass
 
-        for self.file in glob.glob(f'{self.input_dir}{os.path.sep}*.{self.input_extension}'):
+        for self.file in glob.glob(f'{self.args.input_dir}{os.path.sep}*.{self.args.input_extension}'):
             self.filename, self.extension = os.path.splitext(self.file)
             self.vmaf_value = 0 # Reset the VMAF value for each new file. Technically not needed, but nice to have I guess
-            self.crf_value = self.initial_crf_value
+            self.crf_value = self.args.initial_crf_value
         
-            if not glob.glob(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.*'): #check if the same filename already exists in the output folder. Extension is ignored to allow custom input container types/extensions
-                if self.file_chunking_mode == 0:
+            if not glob.glob(f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.*'): #check if the same filename already exists in the output folder. Extension is ignored to allow custom input container types/extensions
+                if self.args.file_chunking_mode == 0:
                     self.no_chunk_split()
-                elif self.file_chunking_mode == 1:
+                elif self.args.file_chunking_mode == 1:
                     self.chunk_split()
-                elif self.file_chunking_mode == 2:
+                elif self.args.file_chunking_mode == 2:
                     self.chunk_frequency_split()
                 
-                if self.use_intro or self.use_outro:
+                if self.args.use_intro or self.args.use_outro:
                     self.IntroOutro()
                 
                 continue
@@ -235,7 +241,7 @@ class main:
         
         self.GetVideoMetadata(self.file)
         self.GetAudioMetadata(self.file)
-        self.total_chunks = math.ceil(self.total_frames / int(self.fps) / self.chunk_frequency)
+        self.total_chunks = math.ceil(self.total_frames / int(self.fps) / self.args.chunk_frequency)
 
         self.CreateTempFolder()
         
@@ -246,14 +252,14 @@ class main:
         self.chunks = []
         self.start_frame = 0
         self.ii = 0
-        for self.i in tqdm.tqdm(range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency)):
+        for self.i in tqdm.tqdm(range(0, int(self.total_frames / int(self.fps)), self.args.chunk_frequency)):
             self.ii += 1
-            if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
-                self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
+            if not self.i + self.args.chunk_frequency >= int(self.total_frames / int(self.fps)):
+                self.end_frame = self.start_frame + (self.args.chunk_frequency * int(self.fps))
             else:
                 self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
             
-            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))]
+            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}'))]
             p = subprocess.run(arg, stderr=subprocess.DEVNULL)
             
             if p.returncode != 0:
@@ -261,23 +267,23 @@ class main:
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
             self.start_frame = self.end_frame + 1
-            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')))
+            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}')))
 
         self.start_frame = 0
         self.ii = 0
-        for self.i in range(0, int(self.total_frames / int(self.fps)), self.chunk_frequency):
+        for self.i in range(0, int(self.total_frames / int(self.fps)), self.args.chunk_frequency):
             self.ii += 1
-            self.crf_value = self.initial_crf_value
+            self.crf_value = self.args.initial_crf_value
             self.attempt = 0 #reset attempts after each file
 
-            if not self.i + self.chunk_frequency >= int(self.total_frames / int(self.fps)):
-                self.end_frame = self.start_frame + (self.chunk_frequency * int(self.fps))
+            if not self.i + self.args.chunk_frequency >= int(self.total_frames / int(self.fps)):
+                self.end_frame = self.start_frame + (self.args.chunk_frequency * int(self.fps))
             else:
                 self.end_frame = (self.total_frames - self.start_frame) + self.start_frame
 
             while True:
                 if self.split():
-                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
+                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))):
                         self.start_frame = self.end_frame + 1
                         break
                     else:
@@ -291,7 +297,7 @@ class main:
 
         self.GetVideoMetadata(self.file)
         self.GetAudioMetadata(self.file)
-        self.total_chunks = self.file_chunks
+        self.total_chunks = self.args.file_chunks
 
         self.CreateTempFolder()
         
@@ -302,12 +308,12 @@ class main:
         self.chunks = []
         self.start_frame = 0
         self.ii = 0
-        for self.i in tqdm.tqdm(range(self.file_chunks)):
+        for self.i in tqdm.tqdm(range(self.args.file_chunks)):
             self.ii += 1
-            self.crf_value = self.initial_crf_value
+            self.crf_value = self.args.initial_crf_value
             self.attempt = 0 #reset attempts after each file
-            self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
-            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}'))]
+            self.end_frame = math.floor((self.total_frames / self.args.file_chunks) * (self.ii))
+            arg = ['ffmpeg', '-n', '-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}'))]
             p = subprocess.run(arg, stderr=subprocess.DEVNULL)
             
             if p.returncode != 0:
@@ -315,20 +321,20 @@ class main:
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
             self.start_frame = self.end_frame + 1
-            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')))
+            self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}')))
         
         self.start_frame = 0
         self.ii = 0
-        for self.i in range(self.file_chunks):
+        for self.i in range(self.args.file_chunks):
             self.ii += 1
-            self.crf_value = self.initial_crf_value
+            self.crf_value = self.args.initial_crf_value
             self.attempt = 0 #reset attempts after each file
-            self.end_frame = math.floor((self.total_frames / self.file_chunks) * (self.ii))
+            self.end_frame = math.floor((self.total_frames / self.args.file_chunks) * (self.ii))
             
             while True:
 
                 if self.split():
-                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))):
+                    if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))):
                         if not self.ii >= 5:
                             self.start_frame = self.end_frame + 1
                             break
@@ -346,8 +352,8 @@ class main:
 
         while True:
 
-            self.crf_step = self.initial_crf_step
-            arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.audio_bitrate, '-g', str(self.GOP_size), '-preset', str(self.AV1_preset), '-pix_fmt', self.pixel_format, '-svtav1-params', f'tune={str(self.tune_mode)}', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            self.crf_step = self.args.initial_crf_step
+            arg = ['-i', self.file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-b:a', self.args.audio_bitrate, '-g', str(self.args.GOP_size), '-preset', str(self.args.AV1_preset), '-pix_fmt', self.args.pixel_format, '-svtav1-params', f'tune={str(self.args.tune_mode)}', '-movflags', '+faststart', f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}']
             arg[0:0] = self.arg_start
             print('\nPerforming video encode...\n')
             p1 = subprocess.run(arg)
@@ -356,21 +362,21 @@ class main:
                 break
             print('\nVideo encoding finished!')
             
-            if self.attempt >= self.max_attempts:
+            if self.attempt >= self.args.max_attempts:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
                 time.sleep(2)   
                 return
             self.attempt += 1
 
-            if self.checkVMAF(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'):
+            if self.checkVMAF(f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}'):
                 break
             else:
                 continue
 
     def checkVMAF(self, output_filename : str):
         print('\ncomparing video quality...\n')
-        if self.file_chunking_mode != 0:
-            arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
+        if self.args.file_chunking_mode != 0:
+            arg = ['-i', output_filename, '-i', os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}')), '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
         else:
             arg = ['-i', output_filename, '-i', self.file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={self.physical_cores}', '-f', 'null', '-']
         arg[0:0] = self.arg_start
@@ -382,16 +388,16 @@ class main:
         with open('log.json') as f: # Open the json file.
             self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
-        if not self.VMAF_min_value <= self.vmaf_value <= self.VMAF_max_value: # If VMAF value is not inside the VMAF range
-            if self.vmaf_value < self.VMAF_min_value: # If VMAF value is below the minimum range
+        if not self.args.VMAF_min_value <= self.vmaf_value <= self.args.VMAF_max_value: # If VMAF value is not inside the VMAF range
+            if self.vmaf_value < self.args.VMAF_min_value: # If VMAF value is below the minimum range
                 print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too low')
-                if self.VMAF_offset_mode == 0 and not (self.VMAF_min_value - self.vmaf_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF min value
+                if self.args.VMAF_offset_mode == 0 and not (self.args.VMAF_min_value - self.vmaf_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF min value
                     print('\nUsing threshold based increase')
-                    for _ in range(int((self.VMAF_min_value - self.vmaf_value) / self.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
+                    for _ in range(int((self.args.VMAF_min_value - self.vmaf_value) / self.args.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is under the VMAF minimum e.g. a VMAF value of 86, and a VMAF minimum of 90, would temporarily add 2 to the crf_step
                         self.crf_step += 1
                 else:
                     print('\nUsing multiplicative based increase')
-                    self.crf_step += int((self.VMAF_min_value - self.vmaf_value) * self.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the minimum allowed value
+                    self.crf_step += int((self.args.VMAF_min_value - self.vmaf_value) * self.args.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the minimum allowed value
 
                 print(f'Retrying with a CRF decrease of {self.crf_step}. New CRF: ({self.crf_value - self.crf_step})...')
                 time.sleep(2)
@@ -401,15 +407,15 @@ class main:
                     return True #Return True instead of False to skip the file and continue with the next one
                 os.remove(output_filename) # Delete converted file to avoid FFmpeg skipping it
 
-            elif self.vmaf_value > self.VMAF_max_value: # If VMAF value is above the maximum range
+            elif self.vmaf_value > self.args.VMAF_max_value: # If VMAF value is above the maximum range
                 print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too high')
-                if self.VMAF_offset_mode == 0 and not (self.vmaf_value - self.VMAF_max_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF max value
+                if self.args.VMAF_offset_mode == 0 and not (self.vmaf_value - self.args.VMAF_max_value) >= 5: # If VMAF offset mode is set to 0 (threshold based) and NOT off by 5 compared to the VMAF max value
                     print('\nUsing threshold based increase')
-                    for _ in range(int((self.vmaf_value - self.VMAF_max_value) / self.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is above the VMAF maximum e.g. a VMAF value of 99, and a VMAF maximum of 95, would temporarily add 2 to the crf_step
+                    for _ in range(int((self.vmaf_value - self.args.VMAF_max_value) / self.args.VMAF_offset_threshold)): # add 1 to crf_step, for each +2 the VMAF value is above the VMAF maximum e.g. a VMAF value of 99, and a VMAF maximum of 95, would temporarily add 2 to the crf_step
                         self.crf_step += 1
                 else:
                     print('\nUsing multiplicative based increase')
-                    self.crf_step += int((self.vmaf_value - self.VMAF_max_value) * self.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the maximum allowed value
+                    self.crf_step += int((self.vmaf_value - self.args.VMAF_max_value) * self.args.VMAF_offset_multiplication) # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the maximum allowed value
 
                 print(f'Retrying with a CRF increase of {self.crf_step}. New CRF: ({self.crf_value + self.crf_step})...')
                 time.sleep(2)
@@ -422,17 +428,17 @@ class main:
             return False
         else:
             print(f'\nVMAF harmonic mean score of {self.vmaf_value}...\nVMAF score within acceptable range, continuing...\nTook {self.attempt} attempt(s)!\n')
-            if self.file_chunking_mode != 0:
+            if self.args.file_chunking_mode != 0:
                 print(f'Completed chunk {self.ii} out of {self.total_chunks}')
             time.sleep(3)
             return True
 
     def split(self):
-        self.crf_step = self.initial_crf_step
+        self.crf_step = self.args.initial_crf_step
         
         print(f'\nProcessing chunk {self.ii} out of {self.total_chunks}\n')
 
-        arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', str(self.GOP_size), '-preset', str(self.AV1_preset), '-pix_fmt', self.pixel_format, '-svtav1-params', f'tune={str(self.tune_mode)}', os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.output_extension}'))]
+        arg = ['-ss', str(self.start_frame / int(self.fps)), '-to', str(self.end_frame / int(self.fps)), '-i', self.file, '-c:v', 'libsvtav1', '-crf', str(self.crf_value), '-b:v', '0', '-an', '-g', str(self.args.GOP_size), '-preset', str(self.args.AV1_preset), '-pix_fmt', self.args.pixel_format, '-svtav1-params', f'tune={str(self.args.tune_mode)}', os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))]
         arg[0:0] = self.arg_start
         p1 = subprocess.run(arg)
         if p1.returncode != 0:
@@ -441,7 +447,7 @@ class main:
             exit(1)
         print(f'\nFinished processing chunk {self.ii}!')
 
-        if self.attempt >= self.max_attempts:
+        if self.attempt >= self.args.max_attempts:
             print('\nMaximum amount of allowed attempts exceeded. skipping...')
             time.sleep(2)
             return False
@@ -451,14 +457,14 @@ class main:
     def concat(self):
         concat_file = open(os.path.join(self.tempdir, 'concatlist.txt'), 'a')
         for i in range(self.ii):
-            concat_file.write(f"file '{os.path.join(self.tempdir, os.path.join('converted', f'chunk{i+1}.{self.output_extension}'))}'\n")
+            concat_file.write(f"file '{os.path.join(self.tempdir, os.path.join('converted', f'chunk{i+1}.{self.args.output_extension}'))}'\n")
 
         concat_file.close()
 
         if self.detected_audio_stream:
-            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-i', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}'), '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.audio_bitrate, '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-i', os.path.join(self.tempdir, f'audio.{self.audio_codec_name}'), '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', self.args.audio_bitrate, '-movflags', '+faststart', f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}']
         else:
-            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', os.path.join(self.tempdir, 'concatlist.txt'), '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}']
         
         arg[0:0] = self.arg_start
         print('\nCombining chunks...\n')
@@ -515,21 +521,21 @@ class main:
             self.detected_audio_stream = True
             self.audio_codec_name = self.audio_metadata['codec_name']
        
-        if self.detect_audio_bitrate:
-                self.audio_bitrate = str(self.audio_metadata['bit_rate'])
+        if self.args.detect_audio_bitrate:
+                self.args.audio_bitrate = str(self.audio_metadata['bit_rate'])
 
     def IntroOutro(self):
         
         self.CreateTempFolder()
 
         if self.use_intro:
-            self.GetVideoMetadata(self.intro_file)
-            self.GetAudioMetadata(self.intro_file)
+            self.GetVideoMetadata(self.args.intro_file)
+            self.GetAudioMetadata(self.args.intro_file)
 
             if self.detected_audio_stream:
-                arg = ['-i', self.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
+                arg = ['-i', self.args.intro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.args.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
             else:
-                arg = ['-i', self.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
+                arg = ['-i', self.args.intro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF intro.mp4")}']
             arg[0:0] = self.arg_start
             print('\nEncoding intro...\n')
             p = subprocess.run(arg)
@@ -539,13 +545,13 @@ class main:
                 exit(1)
 
         if self.use_outro:
-            self.GetVideoMetadata(self.outro_file)
-            self.GetAudioMetadata(self.outro_file)
+            self.GetVideoMetadata(self.args.outro_file)
+            self.GetAudioMetadata(self.args.outro_file)
 
             if self.detected_audio_stream:
-                arg = ['-i', self.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
+                arg = ['-i', self.args.outro_file, '-c:v', 'libsvtav1', '-c:a', 'aac', '-crf', '30', '-b:v', '0', '-b:a', self.args.audio_bitrate, '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
             else:
-                arg = ['-i', self.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
+                arg = ['-i', self.args.outro_file, '-c:v', 'libsvtav1', '-crf', '30', '-b:v', '0', '-an', '-g', '600', '-preset', '8', f'{os.path.join(self.tempdir, "VMAF outro.mp4")}']
             arg[0:0] = self.arg_start
             print('\nEncoding outro...\n')
             p = subprocess.run(arg)
@@ -554,26 +560,26 @@ class main:
                 print('\nError converting outro file to suitable format!')
                 exit(1)
         
-        if self.use_intro and not self.use_outro:
+        if self.args.use_intro and not self.args.use_outro:
             IntroOutro = open('IntroOutroList.txt', 'w')
             IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF intro.mp4')}'\n")
-            IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'")
-        if self.use_outro and not self.use_intro:
+            IntroOutro.write(f"file '{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}'")
+        if self.args.use_outro and not self.args.use_intro:
             IntroOutro = open('IntroOutroList.txt', 'w')
-            IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'\n")
+            IntroOutro.write(f"file '{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}'\n")
             IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF outro.mp4')}'")
         else:
             IntroOutro = open('IntroOutroList.txt', 'w')
             IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF intro.mp4')}'\n")
-            IntroOutro.write(f"file '{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}'\n")
+            IntroOutro.write(f"file '{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}'\n")
             IntroOutro.write(f"file '{os.path.join(self.tempdir, 'VMAF outro.mp4')}'")
         IntroOutro.close()
 
-        self.GetAudioMetadata(f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.output_extension}')
+        self.GetAudioMetadata(f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)}.{self.args.output_extension}')
         if self.detected_audio_stream:
-            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c', 'copy', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']
+            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c', 'copy', '-movflags', '+faststart', f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.args.output_extension}']
         else:
-            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.output_extension}']        
+            arg = ['-safe', '0', '-f', 'concat', '-i', 'IntroOutroList.txt', '-map', '0', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{self.args.output_dir}{os.path.sep}{os.path.basename(self.filename)} with intro or outro.{self.args.output_extension}']        
         arg[0:0] = self.arg_start
 
         print('\nCombining intro/outro with video...\n')
