@@ -53,7 +53,7 @@ class main:
         audio_bitrate = '192k'
         detect_audio_bitrate = False
         pixel_format = 'yuv420p10le' # Pixel format for the output. yuv420p for 8-bit, yuv420p10le for 10-bit. 10-bit can slightly boost quality, especially with minimizing color banding, but can increase encoder and decoder complexity
-        tune_mode = 0 # Tune mode for the encoder. 0 = VQ (subjective measuring), 1 = PSNR (objective measuring). Subjective measuring can produce sharper frames and results that appear higher quality to human vision
+        tune_mode = 1 # Tune mode for the encoder. 0 = VQ (subjective measuring), 1 = PSNR (objective measuring). Subjective measuring can produce sharper frames and results that appear higher quality to human vision
         GOP_size = 300 # Group Of Pictures, or keyframe size. i.e. every N GOP_size, add a keyframe. if fps is 60 and GOP_size is 300, a keyframe will be added every 5 seconds
 
         #VMAF parameters:
