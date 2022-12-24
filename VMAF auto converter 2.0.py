@@ -70,12 +70,12 @@ class main:
         initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
 
         #Verbosity parameters:
-        self.ffmpeg_verbose_level = 2 # 1 = Display none of ffmpeg's output, 2 = Display only ffmpeg stats, 3 = Display ffmpeg stats and encoder-specific information
+        ffmpeg_verbose_level = 2 # 1 = Display none of ffmpeg's output, 2 = Display only ffmpeg stats, 3 = Display ffmpeg stats and encoder-specific information
 
 
         self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
 
-        parser.add_argument('-v', '--verbosity', action='count', default=self.ffmpeg_verbose_level, help='V = hide, VV = basic, VVV = full', type=str)
+        parser.add_argument('-v', '--verbosity', metavar='0-2', dest='ffmpeg_verbose_level', default=ffmpeg_verbose_level, help='0 = hide, 1 = basic, 2 = full', type=int)
         parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, help='Absolute or relative path to the files', type=str)
         parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, help='Absolute or relative path to where the file should be written', type=str)
         parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, help='Container extension to convert from. Use * to specify all', type=str)
@@ -105,9 +105,9 @@ class main:
 
         self.InitCheck()
 
-        if self.ffmpeg_verbose_level == 1:
+        if self.args.ffmpeg_verbose_level == 0:
             self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet']
-        elif self.ffmpeg_verbose_level == 2:
+        elif self.args.ffmpeg_verbose_level == 1:
             self.arg_start = ['ffmpeg', '-n', '-hide_banner', '-v', 'quiet', '-stats']
         else:
             self.arg_start = ['ffmpeg', '-n']
@@ -207,9 +207,9 @@ class main:
         if not isinstance(self.args.initial_crf_step, int):
             param_issues.append('Initial_crf_step is not a whole number')
 
-        if not isinstance(self.ffmpeg_verbose_level, int):
+        if not isinstance(self.args.ffmpeg_verbose_level, int):
             param_issues.append('FFmpeg_verbose_level is not a whole number')
-        elif not 1 <= self.ffmpeg_verbose_level <= 3:
+        elif not 0 <= self.args.ffmpeg_verbose_level <= 2:
             param_issues.append('FFmpeg_verbose_level is not in range (0-2)')
         
         if param_issues:
@@ -345,7 +345,7 @@ class main:
 
                 if self.split():
                     if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))):
-                        if not self.ii >= 5:
+                        if not self.ii >= self.args.file_chunks:
                             self.start_frame = self.end_frame + 1
                             break
                         else:
