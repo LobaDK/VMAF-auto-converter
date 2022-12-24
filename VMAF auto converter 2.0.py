@@ -17,6 +17,16 @@ class main:
 
     signal.signal(signal.SIGINT, signal_handler)
 
+    def IntOrFloat(self, s: str):
+        if s.isnumeric():
+            value = int(s)
+        else:
+            try:
+                value = float(s)
+            except:
+                raise argparse.ArgumentTypeError(f'{s} is not a valid number or decimal')
+        return value
+
     def __init__(self):
         parser = argparse.ArgumentParser(description='AV1 converter script using VMAF to control the quality', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         
@@ -65,32 +75,32 @@ class main:
 
         self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
 
-        parser.add_argument('-v', '--verbosity', action='count', default=self.ffmpeg_verbose_level, help='V = hide, VV = basic, VVV = full')
-        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, help='Absolute or relative path to the files')
-        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, help='Absolute or relative path to where the file should be written')
-        parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, help='Container extension to convert from. Use * to specify all')
-        parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=output_extension, help='Container extension to convert to')
-        parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=use_intro, help='Add intro')
-        parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=use_outro, help='Add outro')
-        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=intro_file, help='Absolute or relative path to the intro file, including filename')
-        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=outro_file, help='Absolute or relative path to the outro file, including filename')
-        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='file_chunking_mode', default=file_chunking_mode, help='Disable, split N amount of times, or split into N second long chunks')
-        parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='file_chunks', default=file_chunks, help='How many chunks the video should be divided into')
-        parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_frequency', default=chunk_frequency, help='Chunk duration in seconds')
-        parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='AV1_preset', default=AV1_preset, help='Encoding preset for the AV1 encoder')
-        parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=max_attempts, help='Max attempts before the script skips (but keeps) the file')
-        parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=initial_crf_value, help='Encoder CRF value to be used')
-        parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=audio_bitrate, help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits')
-        parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=detect_audio_bitrate, help='If the script should detect and instead use the audio bitrate from input file')
-        parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=pixel_format, help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit')
-        parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=tune_mode, help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)')
-        parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='GOP_size', default=GOP_size, help='Encoder keyframe interval in frames')
-        parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='VMAF_min_value', default=VMAF_min_value, help='Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision')
-        parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='VMAF_max_value', default=VMAF_max_value, help='Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision')
-        parser.add_argument('-vomode', '--vmaf-offset-mode', metavar='0-1', dest='VMAF_offset_mode', default=VMAF_offset_mode, help='Algorithm to use to exponentially adjust the CRF value. 0 = standard and slow threshold-based, 1 = aggressive but can overshoot multiplier-based')
-        parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='VMAF_offset_threshold', default=VMAF_offset_threshold, help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease')
-        parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='VMAF_offset_multiplication', default=VMAF_offset_multiplication, help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value')
-        parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=initial_crf_step, help='How much it should adjust the CRF value on each retry')
+        parser.add_argument('-v', '--verbosity', action='count', default=self.ffmpeg_verbose_level, help='V = hide, VV = basic, VVV = full', type=str)
+        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=input_dir, help='Absolute or relative path to the files', type=str)
+        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=output_dir, help='Absolute or relative path to where the file should be written', type=str)
+        parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=input_extension, help='Container extension to convert from. Use * to specify all', type=str)
+        parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=output_extension, help='Container extension to convert to', type=str)
+        parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=use_intro, help='Add intro', type=int)
+        parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=use_outro, help='Add outro' , type=int)
+        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=intro_file, help='Absolute or relative path to the intro file, including filename', type=str)
+        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=outro_file, help='Absolute or relative path to the outro file, including filename', type=str)
+        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='file_chunking_mode', default=file_chunking_mode, help='Disable, split N amount of times, or split into N second long chunks', type=int)
+        parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='file_chunks', default=file_chunks, help='How many chunks the video should be divided into', type=int)
+        parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_frequency', default=chunk_frequency, help='Chunk duration in seconds', type=int)
+        parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='AV1_preset', default=AV1_preset, help='Encoding preset for the AV1 encoder', type=int)
+        parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=max_attempts, help='Max attempts before the script skips (but keeps) the file', type=int)
+        parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=initial_crf_value, help='Encoder CRF value to be used', type=int)
+        parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=audio_bitrate, help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits', type=str)
+        parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=detect_audio_bitrate, help='If the script should detect and instead use the audio bitrate from input file', type=int)
+        parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=pixel_format, help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit', type=str)
+        parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=tune_mode, help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)', type=int)
+        parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='GOP_size', default=GOP_size, help='Encoder keyframe interval in frames', type=int)
+        parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='VMAF_min_value', default=VMAF_min_value, help='Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', type=self.IntOrFloat)
+        parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='VMAF_max_value', default=VMAF_max_value, help='Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', type=self.IntOrFloat)
+        parser.add_argument('-vomode', '--vmaf-offset-mode', metavar='0-1', dest='VMAF_offset_mode', default=VMAF_offset_mode, help='Algorithm to use to exponentially adjust the CRF value. 0 = standard and slow threshold-based, 1 = aggressive but can overshoot multiplier-based', type=int)
+        parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='VMAF_offset_threshold', default=VMAF_offset_threshold, help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease', type=int)
+        parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='VMAF_offset_multiplication', default=VMAF_offset_multiplication, help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', type=self.IntOrFloat)
+        parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=initial_crf_step, help='How much it should adjust the CRF value on each retry', type=int)
         self.args = parser.parse_args()
 
         self.InitCheck()
@@ -108,7 +118,7 @@ class main:
             self.pass_1_output = 'NUL'
         else:
             self.pass_1_output = '/dev/null'
-        
+    
     def InitCheck(self):
         param_issues = []
         if not isinstance(self.args.input_dir, str):
@@ -388,6 +398,7 @@ class main:
         with open('log.json') as f: # Open the json file.
             self.vmaf_value = float(json.loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
 
+        print(f'\nVMAF range: {self.args.VMAF_min_value} - {self.args.VMAF_max_value}')
         if not self.args.VMAF_min_value <= self.vmaf_value <= self.args.VMAF_max_value: # If VMAF value is not inside the VMAF range
             if self.vmaf_value < self.args.VMAF_min_value: # If VMAF value is below the minimum range
                 print(f'\nVMAF harmonic mean score of {self.vmaf_value}... VMAF value too low')
