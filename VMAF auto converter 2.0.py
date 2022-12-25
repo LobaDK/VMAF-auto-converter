@@ -70,7 +70,7 @@ class main:
         initial_crf_step = 1 # Change this to set the amount the CRF value should change per retry. Is overwritten if VMAF_offset_mode is NOT 0
 
         #Verbosity parameters:
-        ffmpeg_verbose_level = 2 # 1 = Display none of ffmpeg's output, 2 = Display only ffmpeg stats, 3 = Display ffmpeg stats and encoder-specific information
+        ffmpeg_verbose_level = 1 # 0 = Display none of ffmpeg's output, 1 = Display only ffmpeg stats, 2 = Display ffmpeg stats and encoder-specific information
 
 
         self.tempdir = os.path.join(tempfile.gettempdir(), 'VMAF auto converter')
