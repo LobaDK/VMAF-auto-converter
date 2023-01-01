@@ -6,6 +6,16 @@ import argparse
 class EmptySettings(Exception):
     pass
 
+def IntOrFloat(s: str):
+        if s.isnumeric():
+            value = int(s)
+        else:
+            try:
+                value = float(s)
+            except:
+                raise argparse.ArgumentTypeError(f'{s} is not a valid number or decimal')
+        return value
+
 config = ConfigParser()
 
 def CreateSettings():
@@ -55,7 +65,7 @@ def CreateSettings():
         print(f'Error writting settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
-def ReadSettings():
+def ReadSettings() -> dict:
     settings = {}
     try:
         config.read('settings.ini')
@@ -88,13 +98,37 @@ def ReadSettings():
             else:
                 print(f'\n{EmptySettings_menu} is not a valid choice.\n')
     
-    print(settings)
+    parser = argparse.ArgumentParser(description='AV1 converter script using VMAF to control the quality, version 3', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-def CheckSettings():
-    pass
+    parser.add_argument('-v', '--verbosity', metavar='0-2', dest='ffmpeg_verbose_level', default=settings['ffmpeg_verbose_level'], help='0 = hide, 1 = basic, 2 = full', type=int)
+    parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=settings['input_dir'], help='Absolute or relative path to the files', type=str)
+    parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=settings['output_dir'], help='Absolute or relative path to where the file should be written', type=str)
+    parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=settings['input_extension'], help='Container extension to convert from. Use * to specify all', type=str)
+    parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=settings['output_extension'], help='Container extension to convert to', type=str)
+    parser.add_argument('-ui', '--use-intro', metavar='0-1',  dest='use_intro', default=settings['use_intro'], help='Add intro', type=bool)
+    parser.add_argument('-uo', '--use-outro', metavar='0-1', dest='use_outro', default=settings['use_outro'], help='Add outro' , type=bool)
+    parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=settings['intro_file'], help='Absolute or relative path to the intro file, including filename', type=str)
+    parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=settings['outro_file'], help='Absolute or relative path to the outro file, including filename', type=str)
+    parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='chunk_mode', default=settings['chunk_mode'], help='Disable, split N amount of times, or split into N second long chunks', type=int)
+    parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='chunk_size', default=settings['chunk_size'], help='How many chunks the video should be divided into', type=int)
+    parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_length', default=settings['chunk_length'], help='Chunk duration in seconds', type=int)
+    parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='av1_preset', default=settings['av1_preset'], help='Encoding preset for the AV1 encoder', type=int)
+    parser.add_argument('-ma', '--max-attempts', metavar='N', dest='max_attempts', default=settings['max_attempts'], help='Max attempts before the script skips (but keeps) the file', type=int)
+    parser.add_argument('-crf', metavar='1-63', dest='initial_crf_value', default=settings['initial_crf_value'], help='Encoder CRF value to be used', type=int)
+    parser.add_argument('-ab', '--audio-bitrate', metavar='bitrate(B/K/M)', dest='audio_bitrate', default=settings['audio_bitrate'], help='Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits', type=str)
+    parser.add_argument('-dab', '--detect-audio-bitrate', metavar='0-1', dest='detect_audio_bitrate', default=settings['detect_audio_bitrate'], help='If the script should detect and instead use the audio bitrate from input file', type=bool)
+    parser.add_argument('-pxf', '--pixel-format', metavar='pix_fmt', dest='pixel_format', default=settings['pixel_format'], help='Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit', type=str)
+    parser.add_argument('-tune', metavar='0-1', dest='tune_mode', default=settings['tune_mode'], help='Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)', type=int)
+    parser.add_argument('-g', '--keyframe-interval', metavar='N frames', dest='keyframe_interval', default=settings['keyframe_interval'], help='Encoder keyframe interval in frames', type=int)
+    parser.add_argument('-minq', '--minimum-quality', metavar='N', dest='vmaf_min_value', default=settings['vmaf_min_value'], help='Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', type=IntOrFloat)
+    parser.add_argument('-maxq', '--maximum-quality', metavar='N', dest='vmaf_max_value', default=settings['vmaf_max_value'], help='Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', type=IntOrFloat)
+    parser.add_argument('-vomode', '--vmaf-offset-mode', metavar='0-1', dest='vmaf_offset_mode', default=settings['vmaf_offset_mode'], help='Algorithm to use to exponentially adjust the CRF value. 0 = standard and slow threshold-based, 1 = aggressive but can overshoot multiplier-based', type=int)
+    parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='vmaf_offset_threshold', default=settings['vmaf_offset_threshold'], help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease', type=int)
+    parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='vmaf_offset_multiplication', default=settings['vmaf_offset_multiplication'], help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', type=IntOrFloat)
+    parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=settings['initial_crf_step'], help='How much it should adjust the CRF value on each retry', type=int)
+    settings = vars(parser.parse_args())
 
-def ParseArgs():
-    pass
+    return settings
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')
