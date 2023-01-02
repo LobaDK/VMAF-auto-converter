@@ -1,7 +1,8 @@
+import argparse
 from configparser import ConfigParser, Error
 from pathlib import Path
 from tempfile import gettempdir
-import argparse
+
 
 class EmptySettings(Exception):
     pass

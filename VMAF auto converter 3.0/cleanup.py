@@ -2,6 +2,7 @@ from os import remove
 from pathlib import Path
 from shutil import rmtree
 
+
 def cleanup(settings: dict):
     print('cleaning up...')
     tmpfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log']
