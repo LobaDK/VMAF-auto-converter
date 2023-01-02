@@ -1,5 +1,5 @@
 from configparser import ConfigParser, Error
-from os import path
+from pathlib import Path
 from tempfile import gettempdir
 import argparse
 
@@ -24,9 +24,22 @@ def custombool(s: str): # Return value from settings.ini or arg as bool
     else:
         raise argparse.ArgumentTypeError(f'{s} is not a valid True/False flag. Please use "yes", "enable", "on", "y", "1", or "true" for True, and "no", "disable", "off", "n", "0", or "false" for False') # Use argparse's TypeError exception to notify the user of a bad value
 
+def IsPath(s: str):
+    p = Path(s)
+    if p.exists():
+        if p.is_dir():
+            return str(p)
+    raise argparse.ArgumentTypeError(f'{s} does not exist or is not a path')
+
+def ParentExists(s: str):
+    p = Path(s).parent
+    if p.exists():
+        return str(s)
+    raise argparse.ArgumentTypeError(f"{s}'s parent folder does not exist")
+
 config = ConfigParser()
 
-def CreateSettings():
+def CreateSettings(): # Simple method to create a settings file, either if missing or potentially broken
     config['Input/Output settings'] = {'input_dir': 'lossless',
                               'output_dir': 'AV1',
                               'input_extension': 'mp4',
@@ -63,17 +76,17 @@ def CreateSettings():
 
     config['Verbosity settings'] = {'ffmpeg_verbose_level': '1'}
 
-    config['Temporary settings'] = {'tmp_folder': path.join(gettempdir(), 'VMAF auto converter 3.0'),
+    config['Temporary settings'] = {'tmp_folder': Path(gettempdir()) / 'VMAF auto converter 3.0',
                                     'keep_tmp_files': 'no'}
 
     try:
-        with open('settings.ini', 'w') as configfile:
+        with open('settings.ini', 'w') as configfile: # Write or overwrite the settings file, with the dictionary data previously created and added to config
             config.write(configfile)
     except IOError as e:
         print(f'Error writting settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
-def ReadSettings() -> dict:
+def ReadSettings() -> dict: # Simple method that reads and parses the settings file into a dictionary, and returns it
     settings = {}
     try:
         config.read('settings.ini')
@@ -82,24 +95,29 @@ def ReadSettings() -> dict:
         exit(1)
 
     try:
-        for section in config:
-            for setting in config[section]:
-                settings[setting] = config.get(section, setting)
-        if not settings:
+        for section in config: # Loop through each [Section] in the settings file
+            for setting in config[section]: # Loop through each key= in each [Section]
+                settings[setting] = config.get(section, setting) # Use key= to both find the value in the settings file, and create a new key with the same name in the dictionary variable
+        if not settings: # If the settings dictionary variable is empty e.g. due to the file being empty, or incorrectly being parsed, raise an exception
             raise EmptySettings('No settings found in settings.ini!')
     
         parser = argparse.ArgumentParser(description='AV1 converter script using VMAF to control the quality, version 3', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
+        # Use the loaded settings dictionary as a default value for each parameter.
+        # and likewise save any parameter value to a variable of the same name in it's namespace.
+        # Use Type= to check and convert the string values to their correct types.
+        # Throws ArgumentTypeError if one of the values is of incorrect type.
+        # Throws KeyError if one of the settings are missing from the settings file.
         parser.add_argument('-v', '--verbosity', metavar='0-2', dest='ffmpeg_verbose_level', default=settings['ffmpeg_verbose_level'], help='0 = hide, 1 = basic, 2 = full', type=int)
-        parser.add_argument('-i', '--input', metavar='path', dest='input_dir', default=settings['input_dir'], help='Absolute or relative path to the files', type=str)
-        parser.add_argument('-o', '--output', metavar='path', dest='output_dir',  default=settings['output_dir'], help='Absolute or relative path to where the file should be written', type=str)
+        parser.add_argument('-i', '--input', metavar='PATH', dest='input_dir', default=settings['input_dir'], help='Absolute or relative path to the files', type=IsPath)
+        parser.add_argument('-o', '--output', metavar='PATH', dest='output_dir',  default=settings['output_dir'], help='Absolute or relative path to where the file should be written', type=str)
         parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=settings['input_extension'], help='Container extension to convert from. Use * to specify all', type=str)
         parser.add_argument('-oext', '--output-extension', metavar='ext', dest='output_extension', default=settings['output_extension'], help='Container extension to convert to', type=str)
         parser.add_argument('-ui', '--use-intro', metavar='yes/no',  dest='use_intro', default=settings['use_intro'], help='Add intro', type=custombool)
         parser.add_argument('-uo', '--use-outro', metavar='yes/no', dest='use_outro', default=settings['use_outro'], help='Add outro' , type=custombool)
-        parser.add_argument('-if', '--intro-file', metavar='path', dest='intro_file', default=settings['intro_file'], help='Absolute or relative path to the intro file, including filename', type=str)
-        parser.add_argument('-of', '--outro-file', metavar='path', dest='outro_file', default=settings['outro_file'], help='Absolute or relative path to the outro file, including filename', type=str)
-        parser.add_argument('-cm', '--chunk-mode', metavar='0-2', dest='chunk_mode', default=settings['chunk_mode'], help='Disable, split N amount of times, or split into N second long chunks', type=int)
+        parser.add_argument('-if', '--intro-file', metavar='FILE', dest='intro_file', default=settings['intro_file'], help='Absolute or relative path to the intro file, including filename', type=str)
+        parser.add_argument('-of', '--outro-file', metavar='FILE', dest='outro_file', default=settings['outro_file'], help='Absolute or relative path to the outro file, including filename', type=str)
+        parser.add_argument('-cm', '--chunk-mode', metavar='0-3', dest='chunk_mode', default=settings['chunk_mode'], help='Disable, split N amount of times, split into N second long chunks or split by the input keyframe interval', type=int)
         parser.add_argument('-cs', '--chunk-splits', metavar='N splits', dest='chunk_size', default=settings['chunk_size'], help='How many chunks the video should be divided into', type=int)
         parser.add_argument('-cd', '--chunk-duration', metavar='N seconds', dest='chunk_length', default=settings['chunk_length'], help='Chunk duration in seconds', type=int)
         parser.add_argument('-pr', '--av1-preset', metavar='0-12', dest='av1_preset', default=settings['av1_preset'], help='Encoding preset for the AV1 encoder', type=int)
@@ -120,7 +138,7 @@ def ReadSettings() -> dict:
         parser.add_argument('--enable_multiprocessing_chunks', metavar='yes/no', dest='enable_multiprocessing_for_chunks', default=settings['enable_multiprocessing_for_chunks'], help="Whether to use multiprocessing to convert multiple chunks. Not recommended due to SVT-AV1's ability to already fully utilize the CPU, unless the chunks are very short (1-2 seconds)", type=custombool)
         parser.add_argument('--multiprocess-file-spawn', metavar='N', dest='number_of_processed_files', default=settings['number_of_processed_files'], help='How many files should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
         parser.add_argument('--multiprocess-chunk-spawn', metavar='N', dest='number_of_processed_chunks', default=settings['number_of_processed_chunks'], help='How many chunks should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
-        parser.add_argument('--tmp-dir', metavar='path', dest='tmp_folder', default=settings['tmp_folder'], help='Folder to store the temporary files used by the script', type=str)
+        parser.add_argument('--tmp-dir', metavar='PATH', dest='tmp_folder', default=settings['tmp_folder'], help='Folder to store the temporary files used by the script. Note: Folder and all content will be deleted on exit, if keep_tmp_files is off', type=ParentExists)
         parser.add_argument('--keep-tmp-files', metavar='yes/no', dest='keep_tmp_files', default=settings['keep_tmp_files'], help='If 0/False, delete when done. If 1/True, keep when done', type=custombool)
         settings = vars(parser.parse_args())
 
