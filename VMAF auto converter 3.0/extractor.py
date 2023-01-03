@@ -1,11 +1,11 @@
-from subprocess import Popen
-from subprocess import PIPE
 from json import loads
 from pathlib import Path
+from subprocess import DEVNULL, PIPE, Popen, run
 
-def GetAudioMetadata(settings: dict, output_filename: str):
+
+def GetAudioMetadata(settings: dict, file: str) -> bool | str:
     try:
-        cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', str(output_filename)]
+        cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
         audio_stream = Popen(cmd, stdout=PIPE, stderr=PIPE)
         stdout, stderr = audio_stream.communicate()
         audio_metadata = loads(stdout)['streams'][0]
@@ -21,9 +21,9 @@ def GetAudioMetadata(settings: dict, output_filename: str):
 
     return bool(detected_audio_stream), str(audio_codec_name)
 
-def GetVideoMetadata(settings: dict, output_filename: str):
+def GetVideoMetadata(file: str) -> int:
     try:
-        arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', output_filename]
+        arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]
         video_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
         stdout, stderr = video_stream.communicate()
         video_metadata = loads(stdout)['streams'][0]
@@ -33,7 +33,6 @@ def GetVideoMetadata(settings: dict, output_filename: str):
         exit(1)
     else:
         total_frames = int(video_metadata['nb_frames'])
-        video_codec_name = video_metadata['codec_name']
     
     fps = '0'
     try:
@@ -43,13 +42,17 @@ def GetVideoMetadata(settings: dict, output_filename: str):
         while not fps.isnumeric() or fps == '0':
             fps = input('Manual input required: ')
 
-    return total_frames, video_codec_name, fps
+    return int(total_frames), int(fps)
 
-def ExtractAudio(settings: dict, file: str, audio_codec_name: str):
-    arg = ['ffmpeg', '-v', 'quiet', '-i', file, '-vn', '-c:a', 'copy', Path(settings['tmp_folder']) / f'audio.{audio_codec_name}']
-    print('\nExtracting audio...\n')
-    audio_extract = Popen(arg)
-    if audio_extract.returncode != 0:
+def ExtractAudio(settings: dict, file: str, audio_codec_name: str) -> None:
+    arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{audio_codec_name}')]
+    if settings['ffmpeg_verbose_level'] == 0:
+        audio_extract = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+    else:
+        arg[1:1] = settings['ffmpeg_print']
+        audio_extract = run(arg)
+
+    if not Path(Path(settings['tmp_folder']) / f'audio.{audio_codec_name}').exists():
         print(" ".join(arg))
         print('\nError extracting audio track!')
         exit(1)

@@ -70,9 +70,7 @@ def CreateSettings(): # Simple method to create a settings file, either if missi
                       'VMAF_offset_mode': '2',
                       'initial_crf_step': '1'}
 
-    config['Multiprocessor settings'] = {'enable_multiprocessing_for_single_files': 'no',
-                                         'enable_multiprocessing_for_chunks': 'no',
-                                         'number_of_processed_files': '2',
+    config['Multiprocessor settings'] = {'enable_multiprocessing_for_chunks': 'no',
                                          'number_of_processed_chunks': '2'}
 
     config['Verbosity settings'] = {'ffmpeg_verbose_level': '1'}
@@ -135,12 +133,12 @@ def ReadSettings() -> dict: # Simple method that reads and parses the settings f
         parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='vmaf_offset_threshold', default=settings['vmaf_offset_threshold'], help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease', type=int)
         parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='vmaf_offset_multiplication', default=settings['vmaf_offset_multiplication'], help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', type=IntOrFloat)
         parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=settings['initial_crf_step'], help='How much it should adjust the CRF value on each retry', type=int)
-        parser.add_argument('--enable-multiprocessing-single-files', metavar='yes/no', dest='enable_multiprocessing_for_single_files', default=settings['enable_multiprocessing_for_single_files'], help="Whether to use multiprocessing to convert multiple singular files. Not recommended due to SVT-AV1's ability to already fully utilize the CPU", type=custombool)
         parser.add_argument('--enable_multiprocessing_chunks', metavar='yes/no', dest='enable_multiprocessing_for_chunks', default=settings['enable_multiprocessing_for_chunks'], help="Whether to use multiprocessing to convert multiple chunks. Not recommended due to SVT-AV1's ability to already fully utilize the CPU, unless the chunks are very short (1-2 seconds)", type=custombool)
-        parser.add_argument('--multiprocess-file-spawn', metavar='N', dest='number_of_processed_files', default=settings['number_of_processed_files'], help='How many files should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
         parser.add_argument('--multiprocess-chunk-spawn', metavar='N', dest='number_of_processed_chunks', default=settings['number_of_processed_chunks'], help='How many chunks should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
         parser.add_argument('--tmp-dir', metavar='PATH', dest='tmp_folder', default=settings['tmp_folder'], help='Folder to store the temporary files used by the script. Note: Folder and all content will be deleted on exit, if keep_tmp_files is off', type=ParentExists)
         parser.add_argument('--keep-tmp-files', metavar='yes/no', dest='keep_tmp_files', default=settings['keep_tmp_files'], help='If 0/False, delete when done. If 1/True, keep when done', type=custombool)
+        
+        #Take dictionary-formated variables from it's namespace and overwrite the settings. Non-specified args simply re-use the value from the settings, through the default= flag in add_argument
         settings = vars(parser.parse_args())
 
     except Exception as e:
@@ -162,6 +160,13 @@ def ReadSettings() -> dict: # Simple method that reads and parses the settings f
                 exit(1)
             else:
                 print(f'\nOnly "y" and "n" are supported\n')
+
+    if settings['ffmpeg_verbose_level'] == 0:
+        settings['ffmpeg_print'] = ['-n', '-hide_banner', '-v', 'quiet']
+    elif settings['ffmpeg_verbose_level'] == 1:
+        settings['ffmpeg_print'] = ['-n', '-hide_banner', '-v', 'quiet', '-stats']
+    else:
+        settings['ffmpeg_print'] = None
 
     return settings
 
