@@ -8,7 +8,7 @@ from temp import CreateTempFolder
 from vmaf import CheckVMAF
 
 
-def encode_without_chunks(settings: dict, physical_cores: int, file: str) -> None:
+def encode_without_chunks(settings: dict, file: str) -> None:
     settings['attempt'] = 0
     detected_audio_stream, audio_codec_name = GetAudioMetadata(settings, file)
     
@@ -34,12 +34,12 @@ def encode_without_chunks(settings: dict, physical_cores: int, file: str) -> Non
         settings['attempt'] += 1
 
         output_file = Path(settings['output_dir']) / f'{Path(file).stem}.{settings["output_extension"]}'
-        if CheckVMAF(settings, file, output_file, physical_cores):
+        if CheckVMAF(settings, file, output_file):
             break
         else:
             continue
 
-def encode_with_divided_chunks(settings: dict, physical_cores: int, file: str) -> None:
+def encode_with_divided_chunks(settings: dict, file: str) -> None:
     settings['attempt'] = 0
     detected_audio_stream, audio_codec_name = GetAudioMetadata(settings, file)
     total_frames, fps = GetVideoMetadata(file)
@@ -51,16 +51,14 @@ def encode_with_divided_chunks(settings: dict, physical_cores: int, file: str) -
         print('\nExtracting audio on secondary thread...')
         AudioExtractThread = threading.Thread(target=ExtractAudio, args=(settings, file, audio_codec_name))
         AudioExtractThread.start()
-        AudioExtractThread.join()
-        print(AudioExtractThread.stop_reason)
 
     print('\nPreparing chunks on main thread...')
     sleep(20)
 
-def encode_with_length_chunks(settings: dict, physical_cores: int, file: str) -> None:
+def encode_with_length_chunks(settings: dict, file: str) -> None:
     settings['attempt'] = 0
 
-def encode_with_keyframe_interval_chunks(settings: dict, physical_cores: int, file: str) -> None:
+def encode_with_keyframe_interval_chunks(settings: dict, file: str) -> None:
     settings['attempt'] = 0
 
 if __name__ == '__main__':

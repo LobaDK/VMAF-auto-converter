@@ -19,7 +19,7 @@ signal(SIGINT, signal_handler)
 
 def main():
 
-    physical_cores = int(cpu_count() / 2)
+    settings['physical_cores'] = int(cpu_count() / 2)
 
     if Path('settings.ini').exists():
         settings = ReadSettings()
@@ -37,16 +37,16 @@ def main():
         settings['crf_value'] = settings['initial_crf_value']
         if not list(Path(settings['output_dir']).glob(f'{Path(file).stem}.*')):
             if settings['chunk_mode'] == 0:
-                encode_without_chunks(settings, physical_cores, file) # Encode without chunks
+                encode_without_chunks(settings, file) # Encode without chunks
             
             elif settings['chunk_mode'] == 1:
-                encode_with_divided_chunks(settings, physical_cores, file) # Encode with input split into x chunks
+                encode_with_divided_chunks(settings, file) # Encode with input split into x chunks
             
             elif settings['chunk_mode'] == 2:
-                encode_with_length_chunks(settings, physical_cores, file) # Encode with chunks split into x length
+                encode_with_length_chunks(settings, file) # Encode with chunks split into x length
             
             elif settings['chunk_mode'] == 3:
-                encode_with_keyframe_interval_chunks(settings, physical_cores, file) # Encode with chunks the length of the input keyframe intervals
+                encode_with_keyframe_interval_chunks(settings, file) # Encode with chunks the length of the input keyframe intervals
             
             else:
                 print('chunk mode it out of range (0-3)!')

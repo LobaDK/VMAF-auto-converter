@@ -70,8 +70,8 @@ def CreateSettings(): # Simple method to create a settings file, either if missi
                       'VMAF_offset_mode': '2',
                       'initial_crf_step': '1'}
 
-    config['Multiprocessor settings'] = {'enable_multiprocessing_for_chunks': 'no',
-                                         'number_of_processed_chunks': '2'}
+    config['Multiprocessor settings'] = {'file_threads': '1',
+                                         'chunk_threads': '2'}
 
     config['Verbosity settings'] = {'ffmpeg_verbose_level': '1'}
 
@@ -133,8 +133,8 @@ def ReadSettings() -> dict: # Simple method that reads and parses the settings f
         parser.add_argument('-vot', '--vmaf-offset-threshold', metavar='N', dest='vmaf_offset_threshold', default=settings['vmaf_offset_threshold'], help='How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease', type=int)
         parser.add_argument('-vom', '--vmaf-offset-multiplier', metavar='N', dest='vmaf_offset_multiplication', default=settings['vmaf_offset_multiplication'], help='How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', type=IntOrFloat)
         parser.add_argument('--crf-step', metavar='N', dest='initial_crf_step', default=settings['initial_crf_step'], help='How much it should adjust the CRF value on each retry', type=int)
-        parser.add_argument('--enable_multiprocessing_chunks', metavar='yes/no', dest='enable_multiprocessing_for_chunks', default=settings['enable_multiprocessing_for_chunks'], help="Whether to use multiprocessing to convert multiple chunks. Not recommended due to SVT-AV1's ability to already fully utilize the CPU, unless the chunks are very short (1-2 seconds)", type=custombool)
-        parser.add_argument('--multiprocess-chunk-spawn', metavar='N', dest='number_of_processed_chunks', default=settings['number_of_processed_chunks'], help='How many chunks should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
+        parser.add_argument('--file-threads', metavar='N', dest='file_threads', default=settings['file_threads'], help="Control how many files should be processed at the same time, with multiprocessing. Higher = more CPU usage", type=int)
+        parser.add_argument('--chunk-threads', metavar='N', dest='chunk_threads', default=settings['chunk_threads'], help='Control how many chunks should be processed at the same time, with multiprocessing. Higher = more CPU usage', type=int)
         parser.add_argument('--tmp-dir', metavar='PATH', dest='tmp_folder', default=settings['tmp_folder'], help='Folder to store the temporary files used by the script. Note: Folder and all content will be deleted on exit, if keep_tmp_files is off', type=ParentExists)
         parser.add_argument('--keep-tmp-files', metavar='yes/no', dest='keep_tmp_files', default=settings['keep_tmp_files'], help='If 0/False, delete when done. If 1/True, keep when done', type=custombool)
         

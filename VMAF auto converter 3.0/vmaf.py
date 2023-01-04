@@ -5,9 +5,9 @@ from subprocess import DEVNULL, run
 from time import sleep
 
 
-def CheckVMAF(settings: dict, input_file: str, output_file: str, physical_cores: int) -> bool | str:
+def CheckVMAF(settings: dict, input_file: str, output_file: str) -> bool | str:
     print(f'\nComparing video quality between {Path(input_file).stem} and {Path(output_file).stem}...\n')
-    arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={physical_cores}', '-f', 'null', '-']
+    arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
             p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
     else:
@@ -16,7 +16,7 @@ def CheckVMAF(settings: dict, input_file: str, output_file: str, physical_cores:
     if p.returncode != 0:
         print(" ".join(arg))
         print('\nError comparing quality!')
-        return str('error')
+        return 'error'
     
     with open('log.json') as f: # Open the json file.
             vmaf_value = float(loads(f.read())['pooled_metrics']['vmaf']['harmonic_mean']) # Parse amd get the 'mean' vmaf value
@@ -38,7 +38,7 @@ def CheckVMAF(settings: dict, input_file: str, output_file: str, physical_cores:
             settings['crf_value'] -= settings['crf_step']
             if not 1 <= settings['crf_value'] <= 63:
                 print('CRF value out of range (1-63). Skipping...')
-                return bool(True) #Return True instead of False to skip the file and continue with the next one
+                return True #Return True instead of False to skip the file and continue with the next one
             remove(output_file) # Delete converted file to avoid FFmpeg skipping it
 
         elif vmaf_value > settings["vmaf_max_value"]: # If VMAF value is above the maximum range
@@ -56,14 +56,14 @@ def CheckVMAF(settings: dict, input_file: str, output_file: str, physical_cores:
             settings['crf_value'] += settings['crf_step']
             if not 1 <= settings['crf_value'] <= 63:
                 print('CRF value out of range (1-63). Skipping...')
-                return bool(True) #Return True instead of False to skip the file and continue with the next one
+                return True #Return True instead of False to skip the file and continue with the next one
             remove(output_file) # Delete converted file to avoid FFmpeg skipping it
     else:
         print(f'\nVMAF harmonic mean score of {vmaf_value}...\nVMAF score within acceptable range, continuing...\nTook {settings["attempt"]} attempt(s)!\n')
         if settings['chunk_mode'] != 0:
             print(f'Completed chunk {ii} out of {total_chunks}')
         sleep(3)
-        return bool(True)
+        return True
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')
