@@ -73,7 +73,7 @@ def CreateSettings(): # Simple method to create a settings file, either if missi
     config['Multiprocessor settings'] = {'file_threads': '1',
                                          'chunk_threads': '2'}
 
-    config['Verbosity settings'] = {'ffmpeg_verbose_level': '1'}
+    config['Verbosity settings'] = {'ffmpeg_verbose_level': '0'}
 
     config['Temporary settings'] = {'tmp_folder': Path(gettempdir()) / 'VMAF auto converter 3.0',
                                     'keep_tmp_files': 'no'}

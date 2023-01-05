@@ -1,4 +1,4 @@
-import threading
+from threading import Thread
 from pathlib import Path
 from subprocess import DEVNULL, run
 from time import sleep
@@ -48,8 +48,9 @@ def encode_with_divided_chunks(settings: dict, file: str) -> None:
     CreateTempFolder(settings)
 
     if detected_audio_stream:
+        sleep(0.1)
         print('\nExtracting audio on secondary thread...')
-        AudioExtractThread = threading.Thread(target=ExtractAudio, args=(settings, file, audio_codec_name))
+        AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, audio_codec_name))
         AudioExtractThread.start()
 
     print('\nPreparing chunks on main thread...')

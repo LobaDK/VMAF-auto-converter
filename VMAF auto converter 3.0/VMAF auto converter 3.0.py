@@ -19,7 +19,6 @@ signal(SIGINT, signal_handler)
 
 def main():
 
-    settings['physical_cores'] = int(cpu_count() / 2)
 
     if Path('settings.ini').exists():
         settings = ReadSettings()
@@ -31,6 +30,8 @@ def main():
         mkdir(settings['output_dir'])
     except FileExistsError:
         pass
+
+    settings['physical_cores'] = int(cpu_count() / 2)
 
     files = list(Path(settings['input_dir']).glob(f'*.{settings["input_extension"]}'))
     for file in files:
