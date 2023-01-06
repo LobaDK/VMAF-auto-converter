@@ -10,16 +10,16 @@ def GetAudioMetadata(settings: dict, file: str) -> bool | str:
         stdout, stderr = audio_stream.communicate()
         audio_metadata = loads(stdout)['streams'][0]
     except IndexError:
-        detected_audio_stream = False
+        settings["detected_audio_stream"] = False
         print('\nNo audio stream detected.')
     else:
-        detected_audio_stream = True
+        settings["detected_audio_stream"] = True
         audio_codec_name = audio_metadata['codec_name']
     
     if settings['detect_audio_bitrate']:
             settings['audio_bitrate'] = audio_metadata['bit_rate']
 
-    return bool(detected_audio_stream), str(audio_codec_name)
+    return bool(settings["detected_audio_stream"]), str(audio_codec_name)
 
 def GetVideoMetadata(file: str) -> int:
     try:
