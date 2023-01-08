@@ -276,7 +276,7 @@ class main:
                 print(" ".join(arg))
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
-            self.start_frame = self.end_frame + 1
+            self.start_frame = self.end_frame
             self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}')))
 
         self.start_frame = 0
@@ -294,7 +294,7 @@ class main:
             while True:
                 if self.split():
                     if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))):
-                        self.start_frame = self.end_frame + 1
+                        self.start_frame = self.end_frame
                         break
                     else:
                         continue
@@ -330,7 +330,7 @@ class main:
                 print(" ".join(arg))
                 print(f'\nError preparing chunk {self.ii}')
                 exit(1)
-            self.start_frame = self.end_frame + 1
+            self.start_frame = self.end_frame
             self.chunks.append(os.path.join(self.tempdir, os.path.join('prepared', f'chunk{self.ii}.{self.args.output_extension}')))
         
         self.start_frame = 0
@@ -346,7 +346,7 @@ class main:
                 if self.split():
                     if self.checkVMAF(os.path.join(self.tempdir, os.path.join('converted', f'chunk{self.ii}.{self.args.output_extension}'))):
                         if not self.ii >= self.args.file_chunks:
-                            self.start_frame = self.end_frame + 1
+                            self.start_frame = self.end_frame
                             break
                         else:
                             self.concat()
