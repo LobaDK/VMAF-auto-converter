@@ -13,7 +13,7 @@ def cleanup(settings: dict) -> None:
         except:
             pass
     
-    if Path(settings['tmp_folder']).exists():
+    if Path(settings['tmp_folder']).exists() and not settings['keep_tmp_files']:
         tmpcleanup(settings)
 
 def tmpcleanup(settings: dict) -> None:

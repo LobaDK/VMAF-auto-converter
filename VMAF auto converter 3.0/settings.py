@@ -184,7 +184,7 @@ def ReadSettings() -> dict: # Simple method that reads and parses the settings f
     elif settings['ffmpeg_verbose_level'] == 1:
         settings['ffmpeg_print'] = ['-n', '-hide_banner', '-v', 'quiet', '-stats']
     else:
-        settings['ffmpeg_print'] = None
+        settings['ffmpeg_print'] = ['-n']
 
     return settings
 

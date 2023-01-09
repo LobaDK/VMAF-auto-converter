@@ -46,6 +46,7 @@ def GetVideoMetadata(settings: dict, file: str) -> dict:
         print('\nError getting video frame rate.')
         while not settings['fps'].isnumeric() or settings['fps'] == '0':
             settings['fps'] = input('Manual input required: ')
+    settings['fps'] = int(settings['fps'])
 
     return settings
 
