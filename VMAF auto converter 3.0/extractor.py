@@ -5,6 +5,8 @@ from threading import current_thread
 
 
 def GetAudioMetadata(settings: dict, file: str) -> dict:
+    """Use ffprobe to get metadata from the input file's audio stream.
+    Returns an updated settings dictionary with the included audio metadata"""
     try:
         cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
         audio_stream = Popen(cmd, stdout=PIPE, stderr=PIPE)
@@ -23,6 +25,8 @@ def GetAudioMetadata(settings: dict, file: str) -> dict:
     return settings
 
 def GetVideoMetadata(settings: dict, file: str) -> dict:
+    """Use ffprobe to get metadata from the input file's video stream.
+    Returns an updated settings dictionary with the included video metadata"""
     try:
         arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]
         video_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
@@ -46,6 +50,7 @@ def GetVideoMetadata(settings: dict, file: str) -> dict:
     return settings
 
 def ExtractAudio(settings: dict, file: str) -> None:
+    """Use ffmpeg to extract the first audio stream from the input video."""
     arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
     if settings['ffmpeg_verbose_level'] == 0:
         run(arg, stderr=DEVNULL, stdout=DEVNULL)

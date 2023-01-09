@@ -6,6 +6,10 @@ from time import sleep
 
 
 def CheckVMAF(settings: dict, input_file: str, output_file: str) -> bool | str:
+    """Compare the converted video or chunk to the original.
+    Returns False if the quality is above or below the required score.
+    Returns True if the quality is within the required score OR an error happened.
+    """
     print(f'\nComparing video quality between {Path(input_file).stem} and {Path(output_file).stem}...\n')
     arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
