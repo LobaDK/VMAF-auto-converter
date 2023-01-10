@@ -1,4 +1,4 @@
-from os import remove, mkdir
+from os import mkdir, remove
 from pathlib import Path
 from shutil import rmtree
 

@@ -3,9 +3,9 @@ from os import cpu_count, mkdir
 from pathlib import Path
 from signal import SIGINT, signal
 
-from temp import cleanup, tmpcleanup
 from encode import encoder
 from settings import CreateSettings, ReadSettings
+from temp import cleanup, tmpcleanup
 
 
 def signal_handler(sig, frame):

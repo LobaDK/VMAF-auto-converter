@@ -52,6 +52,7 @@ def GetVideoMetadata(settings: dict, file: str) -> dict:
 
 def ExtractAudio(settings: dict, file: str) -> None:
     """Use ffmpeg to extract the first audio stream from the input video."""
+    print('\nExtracting audio on secondary thread...')
     arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
     if settings['ffmpeg_verbose_level'] == 0:
         run(arg, stderr=DEVNULL, stdout=DEVNULL)
@@ -63,7 +64,7 @@ def ExtractAudio(settings: dict, file: str) -> None:
         print(" ".join(arg))
         print('\nError extracting audio track!')
         exit(1)
-    print(f'Audio extraction completed on {current_thread().name}!')
+    print(f'\nAudio extraction completed on {current_thread().name}!')
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')
