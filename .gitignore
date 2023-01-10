@@ -4,3 +4,4 @@ __pycache__
 AV1
 lossless
 *.exe
+log.json

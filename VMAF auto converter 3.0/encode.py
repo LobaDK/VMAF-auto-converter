@@ -1,10 +1,10 @@
-from multiprocessing import Event, Process, Queue, Value
+from multiprocessing import Event, Process, Queue, Value, Lock
 from pathlib import Path
 from subprocess import DEVNULL, run
 from threading import Thread
 from time import sleep
 
-from chunking import calculate, generate
+from chunking import calculate, generate, convert
 from extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
 from temp import CreateTempFolder
 from vmaf import CheckVMAF
@@ -43,25 +43,47 @@ def encoder(settings: dict, file: str) -> None:
                 continue
     else:
         CreateTempFolder(settings)
+        processlist = []
+        process_lock = Lock()
+
+        process_failure = Event()
     
         if settings['detected_audio_stream']:
-            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file))
+            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure))
             AudioExtractThread.start()
             
         chunk_calculate_queue = Queue()
         chunk_generator_queue = Queue()
         
         chunk_range = Value('i', 0)
-        chunk_queue = Event()
+        chunk_counter = Value('i', 0)
+        converted_counter = Value('i', 0)
+        
+        chunk_queue_event = Event()
+        chunk_generator_queue_event = Event()
 
-        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_queue, chunk_range))
+        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_queue_event, chunk_range, process_failure, process_lock))
         chunk_calculate_process.start()
+        processlist.append(chunk_calculate_process)
         
-        chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_queue, chunk_range))
-        chunk_generator_process.start()
+        for _ in range(settings['chunk_threads']):
+            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_queue_event, chunk_range, process_failure, process_lock, chunk_counter, chunk_generator_queue, chunk_generator_queue_event))
+            chunk_generator_process.start()
+            processlist.append(chunk_generator_process)
+            sleep(.2)
         
-        chunk_calculate_process.join()
-        chunk_generator_process.join()
+        for _ in range(settings['chunk_threads']):
+            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, converted_counter, chunk_range, chunk_generator_queue_event, process_failure))
+            chunk_converter_process.start()
+            processlist.append(chunk_converter_process)
+            sleep(.2)
+
+        for p in processlist:
+            p.join()
+
+        if process_failure.is_set():
+            print('One or more critical errors encountered in other threads/processes, exiting...')
+            exit(1)
 
         print('Converting...')
 
