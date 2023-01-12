@@ -125,7 +125,7 @@ def ReadSettings() -> dict: # Simple method that reads and parses the settings f
         # Use Type= to check and convert the string values to their correct types.
         # Throws ArgumentTypeError if one of the values is of incorrect type.
         # Throws KeyError if one of the settings are missing from the settings file.
-        parser.add_argument('-v', '--verbosity', metavar='0-2', dest='ffmpeg_verbose_level', default=settings['ffmpeg_verbose_level'], help='0 = hide, 1 = basic, 2 = full', type=int)
+        parser.add_argument('-v', '--verbosity', metavar='0-2', dest='ffmpeg_verbose_level', default=settings['ffmpeg_verbose_level'], help='0 = hide, 1 = basic, 2 = full. Above 0 is only recommended for debugging', type=int)
         parser.add_argument('-i', '--input', metavar='PATH', dest='input_dir', default=settings['input_dir'], help='Absolute or relative path to the files', type=IsPath)
         parser.add_argument('-o', '--output', metavar='PATH', dest='output_dir',  default=settings['output_dir'], help='Absolute or relative path to where the file should be written', type=str)
         parser.add_argument('-iext', '--input-extension', metavar='ext', dest='input_extension', default=settings['input_extension'], help='Container extension to convert from. Use * to specify all', type=str)

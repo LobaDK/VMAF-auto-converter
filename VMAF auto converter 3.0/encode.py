@@ -16,9 +16,11 @@ def encoder(settings: dict, file: str) -> None:
     settings = GetVideoMetadata(settings, file)
 
     if settings['chunk_mode'] == 0: #ENCODING WITHOUT CHUNKS
+        crf_value = settings['initial_crf_value']
         while True:
-            settings['crf_step'] = settings['initial_crf_step']
-            arg = ['ffmpeg', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(settings['crf_value']), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
+            print(f'\nConverting {Path(file).stem}...')
+            crf_step = settings['initial_crf_step']
+            arg = ['ffmpeg', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             if settings['ffmpeg_verbose_level'] == 0:
                 p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
             else:
@@ -36,9 +38,13 @@ def encoder(settings: dict, file: str) -> None:
                 return
             settings['attempt'] += 1
 
-            output_file = Path(settings['output_dir']) / f'{Path(file).stem}.{settings["output_extension"]}'
-            if CheckVMAF(settings, file, output_file):
+            converted_file = Path(settings['output_dir']) / f'{Path(file).stem}.{settings["output_extension"]}'
+            retry, crf_value, crf_step = CheckVMAF(settings, crf_value, crf_step, file, converted_file, settings['attempt'])
+            if retry == False:   
+                print(f'\nFinished converting file {Path(converted_file).stem}')
                 break
+            elif retry == 'error':
+                process_failure.set()
             else:
                 continue
     else:
@@ -48,44 +54,61 @@ def encoder(settings: dict, file: str) -> None:
 
         process_failure = Event()
     
-        if settings['detected_audio_stream']:
-            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure))
-            AudioExtractThread.start()
-            
         chunk_calculate_queue = Queue()
         chunk_generator_queue = Queue()
         
         chunk_range = Value('i', 0)
-        chunk_counter = Value('i', 0)
-        converted_counter = Value('i', 0)
         
-        chunk_queue_event = Event()
-        chunk_generator_queue_event = Event()
+        audio_extract_finished = Event()
+        chunk_calculation_started = Event()
+        chunk_calculation_finished = Event()
+        chunk_generator_started = Event()
+        chunk_generator_finished = Event()
 
-        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_queue_event, chunk_range, process_failure, process_lock))
+        if settings['detected_audio_stream']:
+            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure, audio_extract_finished))
+            AudioExtractThread.start()
+            
+        if process_failure.is_set():
+            with process_lock:
+                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
+            exit(1)
+
+        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock))
         chunk_calculate_process.start()
-        processlist.append(chunk_calculate_process)
         
         for _ in range(settings['chunk_threads']):
-            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_queue_event, chunk_range, process_failure, process_lock, chunk_counter, chunk_generator_queue, chunk_generator_queue_event))
+            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished))
             chunk_generator_process.start()
-            processlist.append(chunk_generator_process)
-            sleep(.2)
         
+        chunk_generator_started.wait()
+
+        if process_failure.is_set():
+            with process_lock:
+                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
+            exit(1)
+
+        processlist.clear()
         for _ in range(settings['chunk_threads']):
-            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, converted_counter, chunk_range, chunk_generator_queue_event, process_failure))
+            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished))
             chunk_converter_process.start()
             processlist.append(chunk_converter_process)
-            sleep(.2)
 
         for p in processlist:
             p.join()
 
         if process_failure.is_set():
-            print('One or more critical errors encountered in other threads/processes, exiting...')
+            with process_lock:
+                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
             exit(1)
 
-        print('Converting...')
+        #Wait for the audio extraction to finish before combining the chunks and audio
+        if not audio_extract_finished.is_set():
+            with process_lock:
+                print('\nWaiting for audio to be extracted...')
+            audio_extract_finished.wait()
+
+        print('combining...')
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')

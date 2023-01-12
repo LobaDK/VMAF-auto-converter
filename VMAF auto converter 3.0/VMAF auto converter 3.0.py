@@ -1,22 +1,25 @@
-from multiprocessing import Pool
 from os import cpu_count, mkdir
 from pathlib import Path
 from signal import SIGINT, signal
+from multiprocessing import active_children
+from time import sleep
 
 from encode import encoder
 from settings import CreateSettings, ReadSettings
-from temp import cleanup, tmpcleanup
+from temp import cleanup
 
 
 def signal_handler(sig, frame):
+    for p in active_children():
+        p.terminate()
+    sleep(1)
     settings = ReadSettings()
     cleanup(settings)
-    exit()
+    exit(1)
 
 signal(SIGINT, signal_handler)
 
 def main():
-
 
     if Path('settings.ini').exists():
         settings = ReadSettings()
@@ -43,5 +46,7 @@ def main():
             print(f'\nAlready converted {Path(file).name}. Skipping...\n')
             continue
 
+    cleanup(settings)
+    
 if __name__ == '__main__':
     main()
