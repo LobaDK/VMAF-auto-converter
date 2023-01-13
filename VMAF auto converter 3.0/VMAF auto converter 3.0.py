@@ -2,7 +2,7 @@ from os import cpu_count, mkdir
 from pathlib import Path
 from signal import SIGINT, signal
 from multiprocessing import active_children
-from time import sleep
+from time import sleep, time
 
 from encode import encoder
 from settings import CreateSettings, ReadSettings
@@ -38,8 +38,10 @@ def main():
     for file in files:
         settings['crf_value'] = settings['initial_crf_value']
         if not list(Path(settings['output_dir']).glob(f'{Path(file).stem}.*')):
+            start = time()
             encoder(settings, file)
-            
+            end = time()
+            print(f'\nTook {end - start} seconds')
             if settings['use_intro'] or settings['use_outro']:
                 pass # Add intro and/or outro
         else:

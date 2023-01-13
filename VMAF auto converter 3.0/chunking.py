@@ -12,12 +12,12 @@ from sys import exit as sysexit
 from vmaf import CheckVMAF
 
 
-def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock) -> None:
+def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, color) -> None:
     """Calculates the start and end frame times for each chunk in three different ways depending on the chunk mode.
     Sends a tuple containing the frame_start, frame_end, iter and chunk filename to the queue for the generator to then pick up"""
     signal(SIGINT, SIG_IGN)
     with process_lock:    
-        print(f'\nStarting chunk calculations on {current_process().name}...')
+        print(f'\n{color}Starting chunk calculations on {current_process().name}...')
     start_frame = 0
     ii = 0
     try:
@@ -67,7 +67,7 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
             p = run(cmd, capture_output=True)
             if p.returncode != 0:
                 with process_lock:
-                    print('\nError reading keyframes!')
+                    print(f'\n{color}Error reading keyframes!')
                 process_failure.set()
                 sysexit(1)
             
@@ -104,12 +104,12 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
     chunk_calculation_finished.set()
     return
 
-def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished) -> None:
+def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished, color) -> None:
     """Creates a lossless H264 encoded chunk using the calculated start and end frame times from the calculatee thread. Frame times, iter and chunk name is delivered through a queue.
     When a chunk is generated, passes the same start and end frames, iter and a name for the generated and converted chunks"""
     signal(SIGINT, SIG_IGN)
     with process_lock:
-        print(f'\nGenerating chunks on {current_process().name}...')
+        print(f'\n{color}Generating chunks on {current_process().name}...')
     try:
        # The process first waits before at least one chunk has been calculated.
        # Once started, the queue size and chunk_calculation_finished event
@@ -122,7 +122,7 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
                 if not chunk_calculate_queue.qsize() == 0 or not chunk_calculation_finished.is_set():
                     start_frame, end_frame, i, chunk = chunk_calculate_queue.get(timeout=30)
                 else:
-                    print(f'\nStopping {current_process().name}: Nothing to do...')
+                    print(f'\n{color}Stopping {current_process().name}: Nothing to do...')
                     sysexit(0)
 
             arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
@@ -131,12 +131,12 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
             if p.returncode != 0:
                 with process_lock:
                     print(" ".join(arg))
-                    print(f'\nError generating chunk {i}')
+                    print(f'\n{color}Error generating chunk {i}')
                 process_failure.set()
                 sysexit(1)
             
             with process_lock:
-                print(f'\nGenerated chunk {i} out of {chunk_range.value}')
+                print(f'\n{color}Generated chunk {i} out of {chunk_range.value}')
 
             original_chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
             converted_chunk = Path(settings['tmp_folder']) / 'converted' / f'chunk{i}.{settings["output_extension"]}'
@@ -145,14 +145,14 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
     
     except Empty:
         with process_lock:
-            print('\nFailed to get calculated timeframes after 30 seconds of waiting.')
+            print(f'\n{color}Failed to get calculated timeframes after 30 seconds of waiting.')
         process_failure.set()
         sysexit(1)
 
-def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue) -> None:
+def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue, color) -> None:
     signal(SIGINT, SIG_IGN)
     with process_lock:
-        print(f'\nConverting chunks on {current_process().name}...')
+        print(f'\n{color}Converting chunks on {current_process().name}...')
     try:
         chunk_generator_started.wait()
         while not process_failure.is_set():
@@ -163,13 +163,13 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                 if not chunk_generator_queue.qsize() == 0:
                     start_frame, end_frame, i, original_chunk, converted_chunk = chunk_generator_queue.get(timeout=30)
                 else:  
-                    print(f'\nStopping {current_process().name}: Nothing to do...')
+                    print(f'\n{color}Stopping {current_process().name}: Nothing to do...')
                     sysexit(0)
             
             while not process_failure.is_set():               
                 crf_step = settings['initial_crf_step']
                 with process_lock:
-                    print(f'\nConverting chunk {i} out of {chunk_range.value}')
+                    print(f'\n{color}Converting chunk {i} out of {chunk_range.value}')
 
                 arg = ['ffmpeg', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
                 if settings['ffmpeg_verbose_level'] == 0:
@@ -181,13 +181,13 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                 if p.returncode != 0:
                     with process_lock:    
                         print(" ".join(arg))
-                        print('\nError converting video!')
+                        print(f'\n{color}Error converting video!')
                     process_failure.set()
                     sysexit(1)
 
                 if attempt >= settings['max_attempts']:
                     with process_lock:    
-                        print(f'\nMaximum amount of allowed attempts on chunk {i} exceeded. skipping...')
+                        print(f'\n{color}Maximum amount of allowed attempts on chunk {i} exceeded. skipping...')
                     sleep(2)
                     break
                 attempt += 1
@@ -195,7 +195,7 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                 retry, crf_value, crf_step = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt)
                 if retry == False:
                     with process_lock:    
-                        print(f'\nFinished processing chunk {i} out of {chunk_range.value}')
+                        print(f'\n{color}Finished processing chunk {i} out of {chunk_range.value}')
                     chunk_concat_queue.put({i: converted_chunk})
                     break
                 elif retry == 'error':
@@ -206,7 +206,7 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
 
     except Empty:
         with process_lock:
-            print('\nFailed to get calculated timeframes after 30 seconds of waiting.')
+            print(f'\n{color}Failed to get calculated timeframes after 30 seconds of waiting.')
         process_failure.set()
         sysexit(1)
 

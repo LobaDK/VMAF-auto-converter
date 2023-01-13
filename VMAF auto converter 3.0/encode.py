@@ -4,12 +4,16 @@ from subprocess import DEVNULL, run
 from threading import Thread
 from time import sleep
 from sys import exit as sysexit
+from colorama import init, Fore
+from random import randrange
 
 from chunking import calculate, generate, convert
 from extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
 from temp import CreateTempFolder
 from vmaf import CheckVMAF
 
+init(autoreset=True)
+colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN]
 
 def encoder(settings: dict, file: str) -> None:
     settings['attempt'] = 0
@@ -68,7 +72,7 @@ def encoder(settings: dict, file: str) -> None:
         chunk_generator_finished = Event()
 
         if settings['detected_audio_stream']:
-            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure, audio_extract_finished))
+            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure, audio_extract_finished, colors.pop(randrange(len(colors)))))
             AudioExtractThread.start()
             
         if process_failure.is_set():
@@ -76,12 +80,12 @@ def encoder(settings: dict, file: str) -> None:
                 print('\nOne or more critical errors encountered in other threads/processes, exiting...')
             sysexit(1)
 
-        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock))
+        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, colors.pop(randrange(len(colors)))))
         chunk_calculate_process.start()
         processlist.append(chunk_calculate_process)
         
-        for _ in range(settings['chunk_threads']):
-            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished))
+        for i in range(settings['chunk_threads']):
+            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished, colors[i]))
             chunk_generator_process.start()
             processlist.append(chunk_generator_process)
 
@@ -94,8 +98,8 @@ def encoder(settings: dict, file: str) -> None:
             sysexit(1)
 
         processlist.clear()
-        for _ in range(settings['chunk_threads']):
-            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue))
+        for i in range(settings['chunk_threads']):
+            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue, colors[i]))
             chunk_converter_process.start()
             processlist.append(chunk_converter_process)
 
