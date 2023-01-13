@@ -125,7 +125,7 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
                     print(f'\nStopping {current_process().name}: Nothing to do...')
                     sysexit(0)
 
-            arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'faster', '-qp', '0', '-an', str(chunk)]
+            arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
             p = run(arg, stderr=DEVNULL)
 
             if p.returncode != 0:
@@ -149,7 +149,7 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
         process_failure.set()
         sysexit(1)
 
-def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished) -> None:
+def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue) -> None:
     signal(SIGINT, SIG_IGN)
     with process_lock:
         print(f'\nConverting chunks on {current_process().name}...')
@@ -166,7 +166,7 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                     print(f'\nStopping {current_process().name}: Nothing to do...')
                     sysexit(0)
             
-            while True:               
+            while not process_failure.is_set():               
                 crf_step = settings['initial_crf_step']
                 with process_lock:
                     print(f'\nConverting chunk {i} out of {chunk_range.value}')
@@ -196,6 +196,7 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                 if retry == False:
                     with process_lock:    
                         print(f'\nFinished processing chunk {i} out of {chunk_range.value}')
+                    chunk_concat_queue.put({i: converted_chunk})
                     break
                 elif retry == 'error':
                     process_failure.set()
