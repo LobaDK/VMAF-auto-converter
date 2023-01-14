@@ -1,5 +1,7 @@
 from argparse import ArgumentTypeError
 from pathlib import Path
+
+
 def IntOrFloat(s: str): # Return value from settings.ini or arg as int or float
     """Attempts to convert the given string to an int or float value.
     Raises argparse.ArgumentTypeError if unsuccessful"""

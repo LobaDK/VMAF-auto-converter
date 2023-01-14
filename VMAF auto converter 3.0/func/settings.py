@@ -3,7 +3,7 @@ from configparser import ConfigParser, Error
 from pathlib import Path
 from tempfile import gettempdir
 
-from checks import *
+from func.checks import *
 
 class EmptySettings(Exception):
     pass

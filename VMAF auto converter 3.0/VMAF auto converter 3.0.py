@@ -4,9 +4,9 @@ from signal import SIGINT, signal
 from multiprocessing import active_children
 from time import sleep, time
 
-from encode import encoder
-from settings import CreateSettings, ReadSettings
-from temp import cleanup
+from func.encode import encoder
+from func.settings import CreateSettings, ReadSettings
+from func.temp import cleanup
 
 
 def signal_handler(sig, frame):

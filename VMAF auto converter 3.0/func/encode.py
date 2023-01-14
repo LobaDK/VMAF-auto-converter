@@ -7,10 +7,10 @@ from sys import exit as sysexit
 from colorama import init, Fore
 from random import randrange
 
-from chunking import calculate, generate, convert
-from extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
-from temp import CreateTempFolder
-from vmaf import CheckVMAF
+from func.chunking import calculate, generate, convert
+from func.extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
+from func.temp import CreateTempFolder
+from func.vmaf import CheckVMAF
 
 init(autoreset=True)
 colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN]

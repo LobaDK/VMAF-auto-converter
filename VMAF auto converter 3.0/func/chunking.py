@@ -9,7 +9,7 @@ from time import sleep
 from signal import signal, SIG_IGN, SIGINT
 from sys import exit as sysexit
 
-from vmaf import CheckVMAF
+from func.vmaf import CheckVMAF
 
 
 def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, color) -> None:
