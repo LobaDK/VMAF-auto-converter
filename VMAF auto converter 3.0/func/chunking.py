@@ -15,6 +15,7 @@ from func.vmaf import CheckVMAF
 def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, color) -> None:
     """Calculates the start and end frame times for each chunk in three different ways depending on the chunk mode.
     Sends a tuple containing the frame_start, frame_end, iter and chunk filename to the queue for the generator to then pick up"""
+    # Ignore SIGINT from process running this method
     signal(SIGINT, SIG_IGN)
     with process_lock:    
         print(f'\n{color}Starting chunk calculations on {current_process().name}...')
@@ -27,15 +28,20 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
                 #Calculate end_frame by dividing it by the chunk_size and multiply with iter
                 end_frame = floor((settings['total_frames']) / (settings['chunk_size']) * i)
 
+                # Create chunk variable with the folder structure and filename
+                # and put it, alongside start_frame, end_frame and iter, in the queue for the chunk generator to use
                 chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
                 chunk_calculate_queue.put((start_frame, end_frame, i, chunk))
         
+                # Turn new start_frame into the old end_frame value, if end frame has not yet reached the end of the video
                 if not end_frame == settings['total_frames']:
                     start_frame = end_frame
 
+                # Increase calculated chunks by one
                 with chunk_range.get_lock():
                     chunk_range.value += 1
 
+                # When the first chunk is calculated, set multiprocess event that allows chunk generation to begin
                 chunk_calculation_started.set()
 
         elif settings['chunk_mode'] == 2: # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT INTO n LONG CHUNKS
@@ -44,21 +50,27 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
                 ii += 1
                 #Calculate current iter + chunk length
                 #If it exceeds or is equal to the total duration in decimal seconds
-                #that will be the last chunk, and end_frame will instead be the last/total frames
+                #that will be the final chunk, and end_frame will instead be the last/total frames
+                #This avoids end_frame stepping over the total amount of frames there are
                 if not i + settings['chunk_length'] >= (settings['total_frames'] / settings['fps']):
                     end_frame = start_frame + (settings['chunk_length'] * settings['fps'])
                 else:
                     end_frame = settings['total_frames']
 
+                # Create chunk variable with the folder structure and filename
+                # and put it, alongside start_frame, end_frame and iter, in the queue for the chunk generator to use
                 chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{ii}.{settings["output_extension"]}'
                 chunk_calculate_queue.put((start_frame, end_frame, ii, chunk))
                 
+                # Turn new start_frame into the old end_frame value, if end frame has not yet reached the end of the video
                 if not end_frame == settings['total_frames']:
                     start_frame = end_frame
 
+                # Increase calculated chunks by one
                 with chunk_range.get_lock():
                     chunk_range.value += 1
 
+                # When the first chunk is calculated, set multiprocess event that allows chunk generation to begin
                 chunk_calculation_started.set()
 
         elif settings['chunk_mode'] == 3: # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT BY EVERY KEYFRAME
@@ -79,14 +91,21 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
                     ii += 1
                     # Convert decimal seconds to frames
                     end_frame = int(float(frame['pts_time']) * settings['fps'])
+
+                    # Create chunk variable with the folder structure and filename
+                    # and put it, alongside start_frame, end_frame and iter, in the queue for the chunk generator to use
                     chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{ii}.{settings["output_extension"]}'
                     chunk_calculate_queue.put((start_frame, end_frame, ii, chunk))
                     
+                    # Set new start_frame as old end_frame.
+                    # No check is done since the iterator will exit on the last keyframe regardless
                     start_frame = end_frame
 
+                    # Increase calculated chunks by one
                     with chunk_range.get_lock():
                         chunk_range.value += 1
 
+                    # Increase calculated chunks by one
                     chunk_calculation_started.set()
 
             ii += 1
@@ -99,13 +118,14 @@ def calculate(settings: dict, file: str, chunk_calculate_queue, chunk_calculatio
     except:
         with process_lock:
             print_exc()
+        # Set a global event indicating an error has occured across a process
         process_failure.set()
 
     chunk_calculation_finished.set()
     return
 
 def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished, color) -> None:
-    """Creates a lossless H264 encoded chunk using the calculated start and end frame times from the calculatee thread. Frame times, iter and chunk name is delivered through a queue.
+    """Creates a lossless H264 encoded chunk using the calculated start and end frame times from the calculated thread. Frame times, iter and chunk name is delivered through a queue.
     When a chunk is generated, passes the same start and end frames, iter and a name for the generated and converted chunks"""
     signal(SIGINT, SIG_IGN)
     with process_lock:
@@ -132,12 +152,15 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
                 with process_lock:
                     print(" ".join(arg))
                     print(f'\n{color}Error generating chunk {i}')
+                # Set a global event indicating an error has occured across a process
                 process_failure.set()
                 sysexit(1)
             
             with process_lock:
                 print(f'\n{color}Generated chunk {i} out of {chunk_range.value}')
 
+            # Combine folder paths to create chunk path and name for the original and converted chunk
+            # and add them to the queue alongside the start_frame, end_frame and iter
             original_chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
             converted_chunk = Path(settings['tmp_folder']) / 'converted' / f'chunk{i}.{settings["output_extension"]}'
             chunk_generator_queue.put((start_frame, end_frame, i, original_chunk, converted_chunk))
@@ -146,6 +169,7 @@ def generate(settings: dict, file: str, chunk_calculate_queue, chunk_calculation
     except Empty:
         with process_lock:
             print(f'\n{color}Failed to get calculated timeframes after 30 seconds of waiting.')
+        # Set a global event indicating an error has occured across a process
         process_failure.set()
         sysexit(1)
 
@@ -154,6 +178,11 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
     with process_lock:
         print(f'\n{color}Converting chunks on {current_process().name}...')
     try:
+        # The process first waits before at least one chunk has been generated.
+        # Once started, the queue size is checked with a process lock to hopefully prevent race conditions
+        # and fetches a task from the queue
+        # TODO: Figure out a way to check if the chunk generator has finished 
+        # allowing the convert function to run the moment a chunk has been generated instead of having to wait
         chunk_generator_started.wait()
         while not process_failure.is_set():
             
