@@ -17,11 +17,15 @@ colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN]
 
 def encoder(settings: dict, file: str) -> None:
     settings['attempt'] = 0
+    # Get and add metadata from the input file, to settings
     settings = GetAudioMetadata(settings, file)
     settings = GetVideoMetadata(settings, file)
 
     if settings['chunk_mode'] == 0: #ENCODING WITHOUT CHUNKS
         crf_value = settings['initial_crf_value']
+        
+        # Run infinite loop that only breaks if the quality is within range 
+        # max attempts has exceeded, or an error has occured
         while True:
             print(f'\nConverting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
@@ -54,23 +58,31 @@ def encoder(settings: dict, file: str) -> None:
                 continue
     else:
         CreateTempFolder(settings)
+        # Create empty list for starting and joining processes
         processlist = []
+        
+        # Create lock used for printing and avoiding race conditions
         process_lock = Lock()
 
+        # Create event used to check for process errors
         process_failure = Event()
     
+        # Create queues used to pass data between the chunk calculator, chunk generator, chunk converter and concatenator
         chunk_calculate_queue = Queue()
         chunk_generator_queue = Queue()
         chunk_concat_queue = Queue()
         
+        # Create process-safe int variable for storing the amount of calculated chunks
         chunk_range = Value('i', 0)
         
+        # Create events for audio extractor, chunk calculator and chunk generator starting/finishing
         audio_extract_finished = Event()
         chunk_calculation_started = Event()
         chunk_calculation_finished = Event()
         chunk_generator_started = Event()
         chunk_generator_finished = Event()
 
+        # If audio is detected, run separate non-blocking thread that extracts the audio
         if settings['detected_audio_stream']:
             AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure, audio_extract_finished, colors.pop(randrange(len(colors)))))
             AudioExtractThread.start()
@@ -80,15 +92,18 @@ def encoder(settings: dict, file: str) -> None:
                 print('\nOne or more critical errors encountered in other threads/processes, exiting...')
             sysexit(1)
 
+        # Create, start and add chunk calculator process to process list
         chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, colors.pop(randrange(len(colors)))))
         chunk_calculate_process.start()
         processlist.append(chunk_calculate_process)
         
+        # Create, start and add N chunk generator processes to the process list
         for i in range(settings['chunk_threads']):
             chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished, colors[i]))
             chunk_generator_process.start()
             processlist.append(chunk_generator_process)
 
+        # Join and wait for each process to complete
         for p in processlist:
             p.join()
 
@@ -97,12 +112,14 @@ def encoder(settings: dict, file: str) -> None:
                 print('\nOne or more critical errors encountered in other threads/processes, exiting...')
             sysexit(1)
 
+        # Clear process list and create, start and add N chunk converter processes to the process list
         processlist.clear()
         for i in range(settings['chunk_threads']):
             chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue, colors[i]))
             chunk_converter_process.start()
             processlist.append(chunk_converter_process)
 
+        # Join and wait for each process to complete
         for p in processlist:
             p.join()
 
@@ -111,7 +128,7 @@ def encoder(settings: dict, file: str) -> None:
                 print('\nOne or more critical errors encountered in other threads/processes, exiting...')
             sysexit(1)
 
-        #Wait for the audio extraction to finish before combining the chunks and audio
+        # Wait for the audio extraction to finish before combining the chunks and audio
         if not audio_extract_finished.is_set():
             with process_lock:
                 print('\nWaiting for audio to be extracted...')
@@ -120,7 +137,10 @@ def encoder(settings: dict, file: str) -> None:
         concat(settings, file, chunk_concat_queue)
 
 def concat(settings: dict, file: str, chunk_concat_queue) -> None:
+    # Create empty dictionary for storing the iter as key and filename as value, from queue
     file_list = {}
+
+    # As long as the queue is not empty, grab the next item in the queue
     while not chunk_concat_queue.empty():
         file_list.update(chunk_concat_queue.get())
     

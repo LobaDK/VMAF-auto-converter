@@ -225,6 +225,8 @@ def convert(settings: dict, file: str, chunk_generator_queue, chunk_range, chunk
                 if retry == False:
                     with process_lock:    
                         print(f'\n{color}Finished processing chunk {i} out of {chunk_range.value}')
+                    # Add a dictionry containing the iter and chunk path and filename
+                    # Using the iter as the key allows for an easy way to order use them in the correct order
                     chunk_concat_queue.put({i: converted_chunk})
                     break
                 elif retry == 'error':

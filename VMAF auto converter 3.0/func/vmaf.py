@@ -1,3 +1,4 @@
+from __future__ import annotations
 from json import loads
 from os import remove
 from pathlib import Path
