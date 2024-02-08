@@ -1,28 +1,30 @@
-from os import cpu_count, mkdir
+import os
 from pathlib import Path
-from signal import SIGINT, signal
-from multiprocessing import active_children
+import signal
 from time import sleep, time
 
 from func.encode import encoder
 from func.settings import CreateSettings, ReadSettings
 from func.temp import cleanup
 
-    # Signal handler that catches all SIGINTs (CTLR + C) across the script, threads and processes.
-# TODO: Further test signal handling across processes running ffmpeg, and handle them accordingly
+
+# Signal handler that catches all SIGINTs (CTRL + C) across the main script, threads and processes.
 def signal_handler(sig, frame):
-    for p in active_children():
-        p.terminate()
+    # Send SIGTERM to the entire process group
+    os.killpg(os.getpgid(0), signal.SIGTERM)
     sleep(1)
     settings = ReadSettings()
     cleanup(settings)
     exit(1)
 
-signal(SIGINT, signal_handler)
+
+# Set the signal handler and a 0 process group
+signal.signal(signal.SIGINT, signal_handler)
+os.setpgrp()  # create new process group, become its leader
+
 
 def main():
-
-    # Check if the settings file already exists, and if so, read it. 
+    # Check if the settings file already exists, and if so, read it.
     # Otherwise, create one, and pause, to allow the user to edit the settings before continuing.
     if Path('settings.ini').exists():
         settings = ReadSettings()
@@ -30,15 +32,15 @@ def main():
         CreateSettings()
         input('New settings.ini has been created. Press enter when ready to continue...')
         settings = ReadSettings()
-    
+
     # Attempt to create the output folder, and ignore if it already exists.
     try:
-        mkdir(settings['output_dir'])
+        os.mkdir(settings['output_dir'])
     except FileExistsError:
         pass
 
     # Get the physical core count, used in the VMAF library.
-    settings['physical_cores'] = int(cpu_count() / 2)
+    settings['physical_cores'] = int(os.cpu_count() / 2)
 
     # Iterate through each file that ends with an extension matching the specified extension.
     files = list(Path(settings['input_dir']).glob(f'*.{settings["input_extension"]}'))
@@ -51,12 +53,14 @@ def main():
             end = time()
             print(f'\nTook {end - start} seconds')
             if settings['use_intro'] or settings['use_outro']:
-                pass # Add intro and/or outro
+                pass  # Add intro and/or outro
         else:
             print(f'\nAlready converted {Path(file).name}. Skipping...\n')
             continue
 
     cleanup(settings)
-    
+
+
 if __name__ == '__main__':
     main()
+    signal.pause()

@@ -18,11 +18,12 @@ def GetAudioMetadata(settings: dict, file: str) -> dict:
     else:
         settings["detected_audio_stream"] = True
         settings['audio_codec_name'] = audio_metadata['codec_name']
-    
+
     if settings['detect_audio_bitrate']:
-            settings['audio_bitrate'] = audio_metadata['bit_rate']
+        settings['audio_bitrate'] = audio_metadata['bit_rate']
 
     return settings
+
 
 def GetVideoMetadata(settings: dict, file: str) -> dict:
     """Use ffprobe to get metadata from the input file's video stream.
@@ -38,17 +39,18 @@ def GetVideoMetadata(settings: dict, file: str) -> dict:
         exit(1)
     else:
         settings['total_frames'] = int(video_metadata['nb_frames'])
-    
+
     settings['fps'] = '0'
     try:
         settings['fps'] = video_metadata['avg_frame_rate'].split('/', 1)[0]
-    except:
+    except KeyError:
         print('\nError getting video frame rate.')
         while not settings['fps'].isnumeric() or settings['fps'] == '0':
             settings['fps'] = input('Manual input required: ')
     settings['fps'] = int(settings['fps'])
 
     return settings
+
 
 def ExtractAudio(settings: dict, file: str, process_failure, audio_extract_finished, color) -> None:
     """Use ffmpeg to extract the first audio stream from the input video."""
@@ -65,9 +67,10 @@ def ExtractAudio(settings: dict, file: str, process_failure, audio_extract_finis
         print(f'\n{color}Error extracting audio track!')
         process_failure.set()
         exit(1)
-    
+
     print(f'\n{color}Audio extraction completed on {current_thread().name}!')
     audio_extract_finished.set()
+
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')

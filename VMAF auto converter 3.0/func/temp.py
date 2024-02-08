@@ -1,4 +1,4 @@
-from os import mkdir, remove
+import os
 from pathlib import Path
 from shutil import rmtree
 
@@ -9,31 +9,41 @@ def cleanup(settings: dict) -> None:
     tmpfile_list = ['IntroOutroList.txt', 'log.json', 'ffmpeg2pass-0.log']
     for tmp in tmpfile_list:
         try:
-            remove(tmp)
-        except:
-            pass
-    
+            os.remove(tmp)
+        except FileNotFoundError:
+            print(f"The file {tmp} does not exist.")
+        except PermissionError:
+            print(f"Insufficient permissions to delete the file {tmp}.")
+        except IsADirectoryError:
+            print(f"{tmp} is a directory, not a file.")
+        except OSError as e:
+            print(f"Error deleting file {tmp}: {e.strerror}")
+
     if Path(settings['tmp_folder']).exists() and not settings['keep_tmp_files']:
         tmpcleanup(settings)
+
 
 def tmpcleanup(settings: dict) -> None:
     try:
         rmtree(settings['tmp_folder'])
-    except:
-        print('\nError cleaning up temp directory')
+    except FileNotFoundError:
+        print(f"\nError cleaning up temp directory: {settings['tmp_folder']} does not exist.")
+    except PermissionError:
+        print(f"\nError cleaning up temp directory: Insufficient permissions to delete {settings['tmp_folder']}.")
+    except OSError as e:
+        print(f"\nError cleaning up temp directory: {e.strerror}")
+
 
 def CreateTempFolder(settings: dict) -> None:
     """Creates the temporary folder used for chunk-based encoding and audio extraction.
     If the folder already exists, it will be wiped first."""
-    try:
-        mkdir(settings['tmp_folder'])
-        mkdir(Path(settings['tmp_folder']) / 'prepared')
-        mkdir(Path(settings['tmp_folder']) / 'converted')
-    except FileExistsError:
-        tmpcleanup(settings)
-        mkdir(settings['tmp_folder'])
-        mkdir(Path(settings['tmp_folder']) / 'prepared')
-        mkdir(Path(settings['tmp_folder']) / 'converted')
+    directories = [settings['tmp_folder'], Path(settings['tmp_folder']) / 'prepared', Path(settings['tmp_folder']) / 'converted']
+
+    for directory in directories:
+        if Path(directory).exists():
+            tmpcleanup(settings)
+        os.mkdir(directory)
+
 
 if __name__ == '__main__':
     print('This file should not be run as a standalone script!')
