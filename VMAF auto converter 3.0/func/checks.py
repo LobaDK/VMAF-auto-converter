@@ -2,7 +2,7 @@ from argparse import ArgumentTypeError
 from pathlib import Path
 
 
-def IntOrFloat(s: str):  # Return value from settings.ini or arg as int or float
+def IntOrFloat(s: str) -> int | float:  # Return value from settings.ini or arg as int or float
     """Attempts to convert the given string to an int or float value.
     Raises argparse.ArgumentTypeError if unsuccessful"""
 
@@ -16,7 +16,7 @@ def IntOrFloat(s: str):  # Return value from settings.ini or arg as int or float
     return value
 
 
-def custombool(s: str):  # Return value from settings.ini or arg as bool
+def custombool(s: str) -> bool:  # Return value from settings.ini or arg as bool
     """Attempts to convert the given string into a boolean value.
     Raises argparse.ArgumentTypeError if unsuccessful"""
 
@@ -28,7 +28,7 @@ def custombool(s: str):  # Return value from settings.ini or arg as bool
         raise ArgumentTypeError(f'{s} is not a valid True/False flag. Please use "yes", "enable", "on", "y", "1", or "true" for True, and "no", "disable", "off", "n", "0", or "false" for False')  # Use argparse's TypeError exception to notify the user of a bad value
 
 
-def IsPath(s: str):
+def IsPath(s: str) -> str:
     """Attempts to validate if the given string representation of a path exists and is a directory.
     Raises argparse.ArgumentTypeError if unsuccessful"""
 
@@ -39,7 +39,7 @@ def IsPath(s: str):
     raise ArgumentTypeError(f'{s} does not exist or is not a path')
 
 
-def ParentExists(s: str):
+def ParentExists(s: str) -> str:
     """Attempts to validate if the given string representation of a path's parent exists.
     Raises argparse.ArgumentTypeError if unsuccessful"""
 
