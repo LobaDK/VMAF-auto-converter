@@ -14,7 +14,7 @@ def signal_handler(sig, frame):
     os.killpg(os.getpgid(0), signal.SIGTERM)
     sleep(1)
     settings = ReadSettings()
-    cleanup(settings)
+    cleanup(settings['tmp_folder'], settings['keep_tmp_files'])
     exit(1)
 
 
@@ -58,7 +58,7 @@ def main():
             print(f'\nAlready converted {Path(file).name}. Skipping...\n')
             continue
 
-    cleanup(settings)
+    cleanup(settings['tmp_folder'], settings['keep_tmp_files'])
 
 
 if __name__ == '__main__':

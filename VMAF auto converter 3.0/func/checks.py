@@ -4,7 +4,7 @@ from pathlib import Path
 
 def IntOrFloat(s: str) -> int | float:  # Return value from settings.ini or arg as int or float
     """Attempts to convert the given string to an int or float value.
-    Raises argparse.ArgumentTypeError if unsuccessful"""
+    Returns the value as an int or float if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
 
     if s.isnumeric():  # Check if the string is numeric i.e. int
         value = int(s)
@@ -18,7 +18,7 @@ def IntOrFloat(s: str) -> int | float:  # Return value from settings.ini or arg 
 
 def custombool(s: str) -> bool:  # Return value from settings.ini or arg as bool
     """Attempts to convert the given string into a boolean value.
-    Raises argparse.ArgumentTypeError if unsuccessful"""
+    Returns the converted bool if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
 
     if s.lower() in ['yes', 'enable', 'on', 'y', '1', 'true']:  # Check if the string is any of the positive values in the list, and return True if so
         return True
@@ -30,7 +30,7 @@ def custombool(s: str) -> bool:  # Return value from settings.ini or arg as bool
 
 def IsPath(s: str) -> str:
     """Attempts to validate if the given string representation of a path exists and is a directory.
-    Raises argparse.ArgumentTypeError if unsuccessful"""
+    Returns the path as a string if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
 
     p = Path(s)
     if p.exists():
@@ -41,7 +41,7 @@ def IsPath(s: str) -> str:
 
 def ParentExists(s: str) -> str:
     """Attempts to validate if the given string representation of a path's parent exists.
-    Raises argparse.ArgumentTypeError if unsuccessful"""
+    Returns the path as a string if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
 
     p = Path(s).parent
     if p.exists():

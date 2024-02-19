@@ -2,32 +2,40 @@ from json import loads
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen, run
 from threading import current_thread
+import multiprocessing
 
 
-def GetAudioMetadata(settings: dict, file: str) -> dict:
-    """Use ffprobe to get metadata from the input file's audio stream.
-    Returns an updated settings dictionary with the included audio metadata"""
+def GetAudioMetadata(detect_audio_bitrate: bool, file: str) -> dict[str, int | str | bool]:
+    """
+    Use ffprobe to get metadata from the input file's audio stream.
+    Returns a dictionary with the included audio metadata.
+
+    The returned dictionary will always contain the key "detected_audio_stream".
+    If an audio stream is detected, the dictionary will also contain the key "audio_codec_name".
+    If detect_audio_bitrate is True and an audio stream is detected, the dictionary will also contain the key "audio_bitrate".
+    """
+    audio_metadata_settings = {}
     try:
         cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
         audio_stream = Popen(cmd, stdout=PIPE, stderr=PIPE)
         stdout, stderr = audio_stream.communicate()
         audio_metadata = loads(stdout)['streams'][0]
     except IndexError:
-        settings["detected_audio_stream"] = False
+        audio_metadata_settings["detected_audio_stream"] = False
         print('\nNo audio stream detected.')
     else:
-        settings["detected_audio_stream"] = True
-        settings['audio_codec_name'] = audio_metadata['codec_name']
+        audio_metadata_settings["detected_audio_stream"] = True
+        audio_metadata_settings['audio_codec_name'] = audio_metadata['codec_name']
+        if detect_audio_bitrate:
+            audio_metadata_settings['audio_bitrate'] = audio_metadata['bit_rate']
 
-    if settings['detect_audio_bitrate']:
-        settings['audio_bitrate'] = audio_metadata['bit_rate']
-
-    return settings
+    return audio_metadata_settings
 
 
-def GetVideoMetadata(settings: dict, file: str) -> dict:
+def GetVideoMetadata(file: str) -> dict[str, int]:
     """Use ffprobe to get metadata from the input file's video stream.
-    Returns an updated settings dictionary with the included video metadata"""
+    Returns a dictionary with the included video metadata."""
+    video_metadata_settings = {}
     try:
         arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]
         video_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
@@ -38,21 +46,22 @@ def GetVideoMetadata(settings: dict, file: str) -> dict:
         print('\nNo video stream detected!')
         exit(1)
     else:
-        settings['total_frames'] = int(video_metadata['nb_frames'])
+        video_metadata_settings['total_frames'] = int(video_metadata['nb_frames'])
+        fps = '0'
+        try:
+            fps = video_metadata['avg_frame_rate'].split('/', 1)[0]
+            if not fps.isnumeric() or int(fps) <= 0:
+                raise KeyError
+        except KeyError:
+            print('\nError getting video frame rate.')
+            while not fps.isnumeric() or int(fps) <= 0:
+                fps = input('Manual input required: ')
+        video_metadata_settings['fps'] = int(fps)
 
-    settings['fps'] = '0'
-    try:
-        settings['fps'] = video_metadata['avg_frame_rate'].split('/', 1)[0]
-    except KeyError:
-        print('\nError getting video frame rate.')
-        while not settings['fps'].isnumeric() or settings['fps'] == '0':
-            settings['fps'] = input('Manual input required: ')
-    settings['fps'] = int(settings['fps'])
-
-    return settings
+    return video_metadata_settings
 
 
-def ExtractAudio(settings: dict, file: str, process_failure, audio_extract_finished, color) -> None:
+def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Event, audio_extract_finished: multiprocessing.Event, color: str) -> None:
     """Use ffmpeg to extract the first audio stream from the input video."""
     print(f'\n{color}Extracting audio on secondary thread...')
     arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]

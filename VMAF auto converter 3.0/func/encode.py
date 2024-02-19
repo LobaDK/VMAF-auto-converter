@@ -10,7 +10,7 @@ from random import randrange
 from func.chunking import calculate, generate, convert
 from func.extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
 from func.temp import CreateTempFolder
-from func.vmaf import CheckVMAF
+from func.vmaf import CheckVMAF, VMAFError
 
 init(autoreset=True)
 _colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN]
@@ -20,8 +20,8 @@ colors = _colors.copy()
 def encoder(settings: dict, file: str) -> None:
     settings['attempt'] = 0
     # Get and add metadata from the input file, to settings
-    settings = GetAudioMetadata(settings, file)
-    settings = GetVideoMetadata(settings, file)
+    settings.update(GetAudioMetadata(settings['detect_audio_bitrate'], file))
+    settings.update(GetVideoMetadata(file))
 
     if settings['chunk_mode'] == 0:  # ENCODING WITHOUT CHUNKS
         crf_value = settings['initial_crf_value']
@@ -50,16 +50,17 @@ def encoder(settings: dict, file: str) -> None:
             settings['attempt'] += 1
 
             converted_file = Path(settings['output_dir']) / f'{Path(file).stem}.{settings["output_extension"]}'
-            retry, crf_value, crf_step = CheckVMAF(settings, crf_value, crf_step, file, converted_file, settings['attempt'])
-            if retry is False:
-                print(f'\nFinished converting file {Path(converted_file).stem}')
+            try:
+                retry = CheckVMAF(settings, crf_value, crf_step, file, converted_file, settings['attempt'])
+                if not retry:
+                    print(f'\nFinished converting file {Path(converted_file).stem}')
+                    break
+                else:
+                    continue
+            except VMAFError:
                 break
-            elif retry == 'error':
-                process_failure.set()
-            else:
-                continue
     else:
-        CreateTempFolder(settings)
+        CreateTempFolder(settings['tmp_folder'])
         # Create empty list for starting and joining processes
         processlist = []
 
@@ -139,7 +140,7 @@ def encoder(settings: dict, file: str) -> None:
         concat(settings, file, chunk_concat_queue)
 
 
-def concat(settings: dict, file: str, chunk_concat_queue) -> None:
+def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
     # Create empty dictionary for storing the iter as key and filename as value, from queue
     file_list = {}
 
