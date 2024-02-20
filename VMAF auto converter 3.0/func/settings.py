@@ -3,10 +3,9 @@ from configparser import ConfigParser, Error
 from pathlib import Path
 from tempfile import gettempdir
 from queue import Queue
-import logging
-import logging.handlers
 
-import func.checks
+from func.checks import IntOrFloat, custombool, IsPath, ParentExists
+from func.logger import create_logger
 
 FFMPEG_VERBOSE_LEVEL_QUIET = 0
 FFMPEG_VERBOSE_LEVEL_STATS = 1
@@ -20,12 +19,17 @@ class EmptySettings(Exception):
 config = ConfigParser()
 
 
-def CreateSettings(log_queue: Queue):  # Simple method to create a settings file, either if missing or potentially broken
-    """Creates settings.ini file using hardcoded default values. Overwrites if the file already exists."""
-    handler = logging.handlers.QueueHandler(log_queue)
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+def CreateSettings(log_queue: Queue):
+    """
+    Creates a settings file with default configuration values.
+
+    Args:
+        log_queue (Queue): A queue for logging messages.
+
+    Returns:
+        None
+    """
+    logger = create_logger(log_queue, 'settings')
 
     config['Input/Output settings'] = {'input_dir': 'lossless',
                                        'output_dir': 'AV1',
@@ -68,27 +72,27 @@ def CreateSettings(log_queue: Queue):  # Simple method to create a settings file
         with open('settings.ini', 'w') as configfile:  # Write or overwrite the settings file, with the dictionary data previously created and added to config
             config.write(configfile)
     except IOError as e:
-        print(f'Error writing settings.ini!\n{type(e).__name__} {e}')
-        logging.error(f'Error writing settings.ini!\n{type(e).__name__} {e}')
+        logger.error(f'Error writing settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
 
-def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:  # Simple method that reads and parses the settings file into a dictionary, and returns it
-    """Reads settings.ini, iterating through each setting and assigning it to a dictionary named 'settings'.
-    Uses Argparse to both validate the values and allow arguments from the terminal, using the settings dictionary as the default values.
+def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
+    """
+    Reads the settings from the 'settings.ini' file and returns them as a dictionary.
 
-    Returns a dictionary with all loaded settings."""
-    handler = logging.handlers.QueueHandler(log_queue)
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    Args:
+        log_queue (Queue): The queue used for logging.
+
+    Returns:
+        dict[str, int, float, bool]: The settings read from the 'settings.ini' file.
+    """
+    logger = create_logger(log_queue, 'settings')
 
     settings = {}
     try:
         config.read('settings.ini')
     except Error as e:  # Error is the baseclass exception of ConfigParser
-        print(f'Error reading settings.ini!\n{type(e).__name__} {e}')
-        logging.error(f'Error reading settings.ini!\n{type(e).__name__} {e}')
+        logger.error(f'Error reading settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
     try:
@@ -107,12 +111,12 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:  # Simple met
         # Throws KeyError if one of the settings are missing from the settings file.
         arguments = [
             {'names': ['-v', '--verbosity'], 'metavar': '0-2', 'dest': 'ffmpeg_verbose_level', 'default': settings['ffmpeg_verbose_level'], 'help': '0 = hide, 1 = basic, 2 = full. Above 0 is only recommended for debugging', 'type': int},
-            {'names': ['-i', '--input'], 'metavar': 'PATH', 'dest': 'input_dir', 'default': settings['input_dir'], 'help': 'Absolute or relative path to the files', 'type': func.checks.IsPath},
+            {'names': ['-i', '--input'], 'metavar': 'PATH', 'dest': 'input_dir', 'default': settings['input_dir'], 'help': 'Absolute or relative path to the files', 'type': IsPath},
             {'names': ['-o', '--output'], 'metavar': 'PATH', 'dest': 'output_dir', 'default': settings['output_dir'], 'help': 'Absolute or relative path to where the file should be written', 'type': str},
             {'names': ['-iext', '--input-extension'], 'metavar': 'ext', 'dest': 'input_extension', 'default': settings['input_extension'], 'help': 'Container extension to convert from. Use * to specify all', 'type': str},
             {'names': ['-oext', '--output-extension'], 'metavar': 'ext', 'dest': 'output_extension', 'default': settings['output_extension'], 'help': 'Container extension to convert to', 'type': str},
-            {'names': ['-ui', '--use-intro'], 'metavar': 'yes/no', 'dest': 'use_intro', 'default': settings['use_intro'], 'help': 'Add intro', 'type': func.checks.custombool},
-            {'names': ['-uo', '--use-outro'], 'metavar': 'yes/no', 'dest': 'use_outro', 'default': settings['use_outro'], 'help': 'Add outro', 'type': func.checks.custombool},
+            {'names': ['-ui', '--use-intro'], 'metavar': 'yes/no', 'dest': 'use_intro', 'default': settings['use_intro'], 'help': 'Add intro', 'type': custombool},
+            {'names': ['-uo', '--use-outro'], 'metavar': 'yes/no', 'dest': 'use_outro', 'default': settings['use_outro'], 'help': 'Add outro', 'type': custombool},
             {'names': ['-if', '--intro-file'], 'metavar': 'FILE', 'dest': 'intro_file', 'default': settings['intro_file'], 'help': 'Absolute or relative path to the intro file, including filename', 'type': str},
             {'names': ['-of', '--outro-file'], 'metavar': 'FILE', 'dest': 'outro_file', 'default': settings['outro_file'], 'help': 'Absolute or relative path to the outro file, including filename', 'type': str},
             {'names': ['-cm', '--chunk-mode'], 'metavar': '0-3', 'dest': 'chunk_mode', 'default': settings['chunk_mode'], 'help': 'Disable, split N amount of times, split into N second long chunks or split by the input keyframe interval', 'type': int},
@@ -122,45 +126,42 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:  # Simple met
             {'names': ['-ma', '--max-attempts'], 'metavar': 'N', 'dest': 'max_attempts', 'default': settings['max_attempts'], 'help': 'Max attempts before the script skips (but keeps) the file', 'type': int},
             {'names': ['-crf'], 'metavar': '1-63', 'dest': 'initial_crf_value', 'default': settings['initial_crf_value'], 'help': 'Encoder CRF value to be used', 'type': int},
             {'names': ['-ab', '--audio-bitrate'], 'metavar': 'bitrate(B/K/M)', 'dest': 'audio_bitrate', 'default': settings['audio_bitrate'], 'help': 'Encoder audio bitrate. Use B/K/M to specify bits, kilobits, or megabits', 'type': str},
-            {'names': ['-dab', '--detect-audio-bitrate'], 'metavar': 'yes/no', 'dest': 'detect_audio_bitrate', 'default': settings['detect_audio_bitrate'], 'help': 'If the script should detect and instead use the audio bitrate from input file', 'type': func.checks.custombool},
+            {'names': ['-dab', '--detect-audio-bitrate'], 'metavar': 'yes/no', 'dest': 'detect_audio_bitrate', 'default': settings['detect_audio_bitrate'], 'help': 'If the script should detect and instead use the audio bitrate from input file', 'type': custombool},
             {'names': ['-pxf', '--pixel-format'], 'metavar': 'pix_fmt', 'dest': 'pixel_format', 'default': settings['pixel_format'], 'help': 'Encoder pixel format to use. yuv420p for 8-bit, and yuv420p10le for 10-bit', 'type': str},
             {'names': ['-tune'], 'metavar': '0-1', 'dest': 'tune_mode', 'default': settings['tune_mode'], 'help': 'Encoder tune mode. 0 = VQ (subjective), 1 = PSNR (objective)', 'type': int},
             {'names': ['-g', '--keyframe-interval'], 'metavar': 'N frames', 'dest': 'keyframe_interval', 'default': settings['keyframe_interval'], 'help': 'Encoder keyframe interval in frames', 'type': int},
-            {'names': ['-minq', '--minimum-quality'], 'metavar': 'N', 'dest': 'vmaf_min_value', 'default': settings['vmaf_min_value'], 'help': 'Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', 'type': func.checks.IntOrFloat},
-            {'names': ['-maxq', '--maximum-quality'], 'metavar': 'N', 'dest': 'vmaf_max_value', 'default': settings['vmaf_max_value'], 'help': 'Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', 'type': func.checks.IntOrFloat},
+            {'names': ['-minq', '--minimum-quality'], 'metavar': 'N', 'dest': 'vmaf_min_value', 'default': settings['vmaf_min_value'], 'help': 'Minimum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', 'type': IntOrFloat},
+            {'names': ['-maxq', '--maximum-quality'], 'metavar': 'N', 'dest': 'vmaf_max_value', 'default': settings['vmaf_max_value'], 'help': 'Maximum allowed quality for the output file/chunk, calculated using VMAF. Allows decimal for precision', 'type': IntOrFloat},
             {'names': ['-vomode', '--vmaf-offset-mode'], 'metavar': '0-1', 'dest': 'vmaf_offset_mode', 'default': settings['vmaf_offset_mode'], 'help': 'Algorithm to use to exponentially adjust the CRF value. 0 = standard and slow threshold-based, 1 = aggressive but can overshoot multiplier-based', 'type': int},
             {'names': ['-vot', '--vmaf-offset-threshold'], 'metavar': 'N', 'dest': 'vmaf_offset_threshold', 'default': settings['vmaf_offset_threshold'], 'help': 'How many whole percent the VMAF should deviate before CRF value will exponentially increase or decrease', 'type': int},
-            {'names': ['-vom', '--vmaf-offset-multiplier'], 'metavar': 'N', 'dest': 'vmaf_offset_multiplication', 'default': settings['vmaf_offset_multiplication'], 'help': 'How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', 'type': func.checks.IntOrFloat},
+            {'names': ['-vom', '--vmaf-offset-multiplier'], 'metavar': 'N', 'dest': 'vmaf_offset_multiplication', 'default': settings['vmaf_offset_multiplication'], 'help': 'How much to multiply the VMAF deviation with, exponentially increasing/decreasing the CRF value. Allows decimal for precision', 'type': IntOrFloat},
             {'names': ['--crf-step'], 'metavar': 'N', 'dest': 'initial_crf_step', 'default': settings['initial_crf_step'], 'help': 'How much it should adjust the CRF value on each retry', 'type': int},
             {'names': ['--file-threads'], 'metavar': 'N', 'dest': 'file_threads', 'default': settings['file_threads'], 'help': "Control how many files should be processed at the same time, with multiprocessing. Higher = more CPU usage", 'type': int},
             {'names': ['--chunk-threads'], 'metavar': 'N', 'dest': 'chunk_threads', 'default': settings['chunk_threads'], 'help': 'Control how many chunks should be processed at the same time, with multiprocessing. Higher = more CPU usage', 'type': int},
-            {'names': ['--tmp-dir'], 'metavar': 'PATH', 'dest': 'tmp_folder', 'default': settings['tmp_folder'], 'help': 'Folder to store the temporary files used by the script. Note: Folder and all content will be deleted on exit, if keep_tmp_files is off', 'type': func.checks.ParentExists},
-            {'names': ['--keep-tmp-files'], 'metavar': 'yes/no', 'dest': 'keep_tmp_files', 'default': settings['keep_tmp_files'], 'help': 'If 0/False, delete when done. If 1/True, keep when done', 'type': func.checks.custombool}
+            {'names': ['--tmp-dir'], 'metavar': 'PATH', 'dest': 'tmp_folder', 'default': settings['tmp_folder'], 'help': 'Folder to store the temporary files used by the script. Note: Folder and all content will be deleted on exit, if keep_tmp_files is off', 'type': ParentExists},
+            {'names': ['--keep-tmp-files'], 'metavar': 'yes/no', 'dest': 'keep_tmp_files', 'default': settings['keep_tmp_files'], 'help': 'If 0/False, delete when done. If 1/True, keep when done', 'type': custombool}
         ]
 
         for arg in arguments:
             parser.add_argument(*arg['names'], metavar=arg['metavar'], dest=arg['dest'], default=arg['default'], help=arg['help'], type=arg['type'])
 
-        # Take dictionary-formated variables from it's namespace and overwrite the settings. Non-specified args simply re-use the value from the settings, through the default= flag in add_argument
+        # Take dictionary-formated variables from it's namespace and overwrite the settings.
+        # Non-specified args simply re-use the value from the settings, through the default= flag in add_argument
         settings = vars(parser.parse_args())
 
     except KeyError as e:
-        print(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
-        logging.error(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
+        logger.error(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
     except EmptySettings as e:
-        print(e)
-        logging.error(e)
+        logger.error(e)
     except Exception as e:
-        print(type(e).__name__, e)
-        logging.error(f'{type(e).__name__} {e}')
+        logger.error(f'{type(e).__name__} {e}')
 
         EmptySettings_menu = None
         while EmptySettings_menu != 'Y' or EmptySettings_menu != 'N':
             EmptySettings_menu = input('Create new settings.ini? Y/N: ').upper()
             if EmptySettings_menu == 'Y':
                 CreateSettings()
-                print('\nNew settings.ini created! Please start the program again to load the new settings.')
-                logging.info('New settings.ini created!')
+                logger.info('New settings.ini created!')
                 exit(0)
             elif EmptySettings_menu == 'N':
                 exit(1)
@@ -174,8 +175,7 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:  # Simple met
     elif settings['ffmpeg_verbose_level'] == FFMPEG_VERBOSE_LEVEL_DEFAULT:
         settings['ffmpeg_print'] = ['-n']
     else:
-        print('Invalid ffmpeg_verbose_level. Must be 0, 1, or 2')
-        logging.warning('Invalid ffmpeg_verbose_level. Must be 0, 1, or 2')
+        logger.warning('Invalid ffmpeg_verbose_level. Must be 0, 1, or 2')
         exit(1)
 
     return settings

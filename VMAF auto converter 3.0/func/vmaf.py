@@ -4,8 +4,7 @@ from os import remove
 from pathlib import Path
 from subprocess import DEVNULL, run
 from time import sleep
-import logging
-import logging.handlers
+from func.logger import create_logger
 
 
 class VMAFError(Exception):
@@ -18,18 +17,23 @@ def CheckVMAF(settings: dict,
               input_file: str,
               output_file: str,
               attempt: int) -> bool:
-    """Compare the converted video or chunk to the original.
-    Returns False if the quality is above or below the required score.
-    Returns True if the quality is within the required score or the CRF value is above or below the supported values.
-    Raises a VMAFError if an error was encountered
     """
-    handler = logging.handlers.QueueHandler(settings['log_queue'])
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    Check the VMAF (Video Multimethod Assessment Fusion) value of a video file and adjust the CRF (Constant Rate Factor) value based on the VMAF range.
 
-    print(f'\nComparing video quality of {Path(output_file).stem}...')
-    logging.info(f'Comparing video quality of {Path(output_file).stem}...')
+    Args:
+        settings (dict): A dictionary containing various settings for the VMAF check.
+        crf_value (int): The current CRF value.
+        crf_step (int): The step size for adjusting the CRF value.
+        input_file (str): The path to the input video file.
+        output_file (str): The path to the output video file.
+        attempt (int): The number of attempts made to adjust the CRF value.
+
+    Returns:
+        bool: True if the CRF value was adjusted and the file should be reprocessed, False if the file should be skipped and the next one should be processed.
+    """
+    logger = create_logger(settings['log_queue'], 'VMAF')
+
+    logger.info(f'Comparing video quality of {Path(output_file).stem}...')
     arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
         p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
@@ -37,9 +41,7 @@ def CheckVMAF(settings: dict,
         arg[1:1] = settings['ffmpeg_print']
         p = run(arg)
     if p.returncode != 0:
-        print(" ".join(arg))
-        print('\nError comparing quality!')
-        logging.error(f'Error comparing quality of {Path(output_file).stem} with {Path(input_file).stem} using arg: {" ".join(arg)}')
+        logger.error(f'Error comparing quality of {Path(output_file).stem} with {Path(input_file).stem} using arg: {" ".join(arg)}')
         raise VMAFError('Error comparing quality')
 
     # Open the json file and get the "mean" VMAF value
@@ -59,17 +61,20 @@ def CheckVMAF(settings: dict,
                 # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the minimum allowed value
                 crf_step += int((settings["vmaf_min_value"] - vmaf_value) * settings["vmaf_offset_multiplication"])
 
-            print((f'\nFile {Path(output_file).stem} too low:\n'
-                   f'Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]}, '
-                   f'Current: {vmaf_value}, Deviation: {round(settings["vmaf_min_value"] - vmaf_value, 2)}\n'
-                   f'Current CRF: {crf_value}, New CRF: {crf_value - crf_step}, '
-                   f'Offset_mode: {"Slow, precise" if settings["vmaf_offset_mode"] == 0 and not (settings["vmaf_min_value"] - vmaf_value) >= 5 else "Fast, can overshoot"}\n'
-                   f'Attempt: {attempt}'))
+            message = f"""
+                      File {Path(output_file).stem} too low:
+                      Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]},
+                      Current: {vmaf_value}, Deviation: {round(settings["vmaf_min_value"] - vmaf_value, 2)}
+                      Current CRF: {crf_value}, New CRF: {crf_value - crf_step},
+                      Offset_mode: {"Slow, precise" if settings["vmaf_offset_mode"] == 0 and not (settings["vmaf_min_value"] - vmaf_value) >= 5 else "Fast, can overshoot"}
+                      Attempt: {attempt}
+                      """
+            logger.info(message.strip())
 
             sleep(2)
             crf_value -= crf_step
             if not 1 <= crf_value <= 63:
-                print('CRF value out of range (1-63). Skipping...')
+                logger.info('CRF value out of range (1-63). Skipping...')
                 # Return False instead of True to skip the file and continue with the next one
                 return False
             # Delete converted file to avoid FFmpeg skipping it
@@ -86,28 +91,32 @@ def CheckVMAF(settings: dict,
             else:
                 # increase the crf_step by multiplying the VMAF_offset_multiplication with how much the VMAF is offset from the maximum allowed value
                 crf_step += int((vmaf_value - settings["vmaf_max_value"]) * settings["vmaf_offset_multiplication"])
-
-            print((f'\nFile {Path(output_file).stem} too high:\n'
-                   f'Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]}, '
-                   f'Current: {vmaf_value}, Deviation: {round(vmaf_value - settings["vmaf_max_value"], 2)}\n'
-                   f'Current CRF: {crf_value}, New CRF: {crf_value + crf_step}, '
-                   f'Offset_mode: {"Slow, precise" if settings["vmaf_offset_mode"] == 0 and not (settings["vmaf_min_value"] - vmaf_value) >= 5 else "Fast, can overshoot"}\n'
-                   f'Attempt: {attempt}'))
+            message = f"""
+                      File {Path(output_file).stem} too high:
+                      Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]},
+                      Current: {vmaf_value}, Deviation: {round(vmaf_value - settings["vmaf_max_value"], 2)}
+                      Current CRF: {crf_value}, New CRF: {crf_value + crf_step},
+                      Offset_mode: {"Slow, precise" if settings["vmaf_offset_mode"] == 0 and not (settings["vmaf_min_value"] - vmaf_value) >= 5 else "Fast, can overshoot"}
+                      Attempt: {attempt}
+                      """
+            logger.info(message.strip())
 
             sleep(2)
             crf_value += crf_step
             if not 1 <= crf_value <= 63:
-                print('CRF value out of range (1-63). Skipping...')
+                logger.info('CRF value out of range (1-63). Skipping...')
                 # Return False instead of True to skip the file and continue with the next one
                 return False
             # Delete converted file to avoid FFmpeg skipping it
             remove(output_file)
             return True
     else:
-        print((f'\nFile {Path(output_file).stem} complete:\n'
-               f'Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]}, '
-               f'Current: {vmaf_value}\n'
-               f'attempts: {attempt}'))
+        message = f"""
+                  File {Path(output_file).stem} complete:
+                  Min: {settings["vmaf_min_value"]}, Max: {settings["vmaf_max_value"]}, Current: {vmaf_value}
+                  attempts: {attempt}
+                  """
+        logger.info(message.strip())
         sleep(3)
         return False
 

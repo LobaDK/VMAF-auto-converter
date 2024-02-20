@@ -4,26 +4,16 @@ from subprocess import DEVNULL, run
 from threading import Thread
 from time import sleep
 from sys import exit as sysexit
-from colorama import init, Fore
-from random import randrange
-import logging
-import logging.handlers
 
 from func.chunking import calculate, generate, convert
 from func.extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
 from func.temp import CreateTempFolder
 from func.vmaf import CheckVMAF, VMAFError
-
-init(autoreset=True)
-_colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN]
-colors = _colors.copy()
+from func.logger import create_logger
 
 
 def encoder(settings: dict, file: str) -> None:
-    handler = logging.handlers.QueueHandler(settings['log_queue'])
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    logger = create_logger(settings['log_queue'], 'encoder')
 
     settings['attempt'] = 0
     # Get and add metadata from the input file, to settings
@@ -37,7 +27,7 @@ def encoder(settings: dict, file: str) -> None:
         # max attempts has exceeded, or an error has occurred
         while True:
             print(f'\nConverting {Path(file).stem}...')
-            logging.info(f'Converting {Path(file).stem}...')
+            logger.info(f'Converting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
             arg = ['ffmpeg', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             if settings['ffmpeg_verbose_level'] == 0:
@@ -48,13 +38,13 @@ def encoder(settings: dict, file: str) -> None:
             if p.returncode != 0:
                 print(" ".join(arg))
                 print('\nError converting video! Skipping...')
-                logging.error(f'Error converting {Path(file).stem} with arguments: {arg}')
+                logger.error(f'Error converting {Path(file).stem} with arguments: {arg}')
                 return
             print('\nVideo encoding finished!')
 
             if settings['attempt'] >= settings['max_attempts']:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
-                logging.info(f'Maximum amount of allowed attempts exceeded for {Path(file).stem}. Skipping...')
+                logger.info(f'Maximum amount of allowed attempts exceeded for {Path(file).stem}. Skipping...')
                 sleep(2)
                 return
             settings['attempt'] += 1
@@ -64,7 +54,7 @@ def encoder(settings: dict, file: str) -> None:
                 retry = CheckVMAF(settings, crf_value, crf_step, file, converted_file, settings['attempt'])
                 if not retry:
                     print(f'\nFinished converting file {Path(converted_file).stem}')
-                    logging.info(f'Finished converting file {Path(converted_file).stem}')
+                    logger.info(f'Finished converting file {Path(converted_file).stem}')
                     break
                 else:
                     continue
@@ -104,8 +94,7 @@ def encoder(settings: dict, file: str) -> None:
                 AudioExtractThread = Thread(target=ExtractAudio, args=(settings,
                                                                        file,
                                                                        process_failure,
-                                                                       audio_extract_finished,
-                                                                       colors.pop(randrange(len(colors)))))
+                                                                       audio_extract_finished))
                 AudioExtractThread.start()
 
             # Create, start and add chunk calculator process to process list
@@ -114,8 +103,7 @@ def encoder(settings: dict, file: str) -> None:
                                                                       chunk_calculate_queue,
                                                                       chunk_range,
                                                                       process_failure,
-                                                                      process_lock,
-                                                                      colors.pop(randrange(len(colors)))))
+                                                                      process_lock))
             chunk_calculate_process.start()
             processlist.append(chunk_calculate_process)
 
@@ -127,8 +115,7 @@ def encoder(settings: dict, file: str) -> None:
                                                                          chunk_range,
                                                                          process_failure,
                                                                          process_lock,
-                                                                         chunk_generator_queue,
-                                                                         colors[i]))
+                                                                         chunk_generator_queue))
                 chunk_generator_process.start()
                 processlist.append(chunk_generator_process)
 
@@ -145,8 +132,7 @@ def encoder(settings: dict, file: str) -> None:
                                                                         chunk_range,
                                                                         process_failure,
                                                                         process_lock,
-                                                                        chunk_concat_queue,
-                                                                        colors[i]))
+                                                                        chunk_concat_queue))
                 chunk_converter_process.start()
                 processlist.append(chunk_converter_process)
 
@@ -158,7 +144,7 @@ def encoder(settings: dict, file: str) -> None:
             if not audio_extract_finished.is_set():
                 with process_lock:
                     print('\nWaiting for audio to be extracted...')
-                    logging.info('Waiting for audio to be extracted...')
+                    logger.info('Waiting for audio to be extracted...')
                 audio_extract_finished.wait()
 
         for queue in queuelist:
@@ -171,10 +157,7 @@ def encoder(settings: dict, file: str) -> None:
 
 
 def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
-    handler = logging.handlers.QueueHandler(settings['log_queue'])
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    logger = create_logger(settings['log_queue'], 'concat')
 
     # Create empty dictionary for storing the iter as key and filename as value, from queue
     file_list = {}
@@ -204,11 +187,11 @@ def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
     if p.returncode != 0:
         print(" ".join(arg))
         print('\nError converting video!')
-        logging.error(f'Error combining chunks with arguments: {arg}')
+        logger.error(f'Error combining chunks with arguments: {arg}')
         sysexit(1)
 
     print('\nChunks successfully combined!')
-    logging.info('Chunks successfully combined!')
+    logger.info('Chunks successfully combined!')
     sleep(3)
 
 

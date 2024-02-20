@@ -3,11 +3,11 @@ from math import floor
 import multiprocessing
 from pathlib import Path
 from subprocess import DEVNULL, run
-from traceback import print_exc
 from time import sleep
 from signal import signal, SIG_IGN, SIGINT
 from sys import exit as sysexit
 
+from func.logger import create_logger
 from func.vmaf import CheckVMAF, VMAFError
 
 EQUAL_SIZE_CHUNKS = 1
@@ -19,15 +19,24 @@ def calculate(settings: dict,
               file: str,
               chunk_calculate_queue: multiprocessing.Queue,
               chunk_range: multiprocessing.Value,
-              process_failure: multiprocessing.Event,
-              process_lock: multiprocessing.Lock,
-              color: str) -> None:
-    """Calculates the start and end frame times for each chunk in three different ways depending on the chunk mode.
-    Sends a tuple containing the frame_start, frame_end, iter and chunk filename to the queue for the generator to then pick up"""
+              process_failure: multiprocessing.Event,) -> None:
+    """
+    Calculate the timings for encoding with video split into chunks based on the given settings.
+
+    Args:
+        settings (dict): A dictionary containing the configuration settings.
+        file (str): The path to the video file.
+        chunk_calculate_queue (multiprocessing.Queue): A queue for passing chunk information to the chunk generator.
+        chunk_range (multiprocessing.Value): A shared value for tracking the number of calculated chunks.
+        process_failure (multiprocessing.Event): An event indicating if an error has occurred across a process.
+
+    Returns:
+        None
+    """
     # Ignore SIGINT from process running this method
     signal(SIGINT, SIG_IGN)
-    with process_lock:
-        print(f'\n{color}Starting chunk calculations on {multiprocessing.current_process().name}...')
+    logger = create_logger(settings['log_queue'], 'chunk_calculate')
+    logger.info(f'Calculating chunks on {multiprocessing.current_process().name}.')
     start_frame = 0
     chunk_count = 0
     try:
@@ -81,8 +90,7 @@ def calculate(settings: dict,
             cmd = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
             p = run(cmd, capture_output=True)
             if p.returncode != 0:
-                with process_lock:
-                    print(f'\n{color}Error reading keyframes!')
+                logger.error(f'Error calculating keyframes: {p.stderr.decode()}')
                 process_failure.set()
                 sysexit(1)
 
@@ -116,15 +124,13 @@ def calculate(settings: dict,
             with chunk_range.get_lock():
                 chunk_range.value += 1
 
-    except Exception:
-        with process_lock:
-            print_exc()
+    except Exception as e:
+        logger.error(f'Error calculating chunks: {e}')
         # Set a global event indicating an error has occurred across a process
         process_failure.set()
 
     chunk_calculate_queue.put(None, None, None, None)
-    with process_lock:
-        print(f'\n{color}Stopping {multiprocessing.current_process().name}...: No more chunks to calculate')
+    logger.info(f'Finished calculating chunks on {multiprocessing.current_process().name}.')
     return
 
 
@@ -133,38 +139,45 @@ def generate(settings: dict,
              chunk_calculate_queue: multiprocessing.Queue,
              chunk_range: multiprocessing.Value,
              process_failure: multiprocessing.Event,
-             process_lock: multiprocessing.Lock,
-             chunk_generator_queue: multiprocessing.Queue,
-             color: str) -> None:
-    """Creates a lossless H264 encoded chunk using the calculated start and end frame times from the calculated thread. Frame times, iter and chunk name is delivered through a queue.
-    When a chunk is generated, passes the same start and end frames, iter and a name for the generated and converted chunks"""
+             chunk_generator_queue: multiprocessing.Queue) -> None:
+    """
+    Generates chunks of a video file based on the given settings and queues them for further processing.
 
+    Args:
+        settings (dict): A dictionary containing the configuration settings.
+        file (str): The path to the video file.
+        chunk_calculate_queue (multiprocessing.Queue): A queue for receiving chunk calculation information.
+        chunk_range (multiprocessing.Value): A shared value representing the total number of chunks.
+        process_failure (multiprocessing.Event): An event indicating if a failure has occurred in the process.
+        chunk_generator_queue (multiprocessing.Queue): A queue for sending chunk generation information.
+
+    Returns:
+        None
+    """
     signal(SIGINT, SIG_IGN)
-    with process_lock:
-        print(f'\n{color}Generating chunks on {multiprocessing.current_process().name}...')
+
+    logger = create_logger(settings['log_queue'], 'chunk_generator')
+
+    logger.info(f'Generating chunks on {multiprocessing.current_process().name}.')
 
     while not process_failure.is_set():
         start_frame, end_frame, i, chunk = chunk_calculate_queue.get(block=True)
 
-        # If the chunk is None, the calculation thread has finished and the generator can exit
+        # If the chunk is None, the calculation process has finished and the generator can exit
         if chunk is None:
-            with process_lock:
-                print(f'\n{color}Stopping {multiprocessing.current_process().name}...: No more chunks to generate')
+            logger.info(f'Stopping {multiprocessing.current_process().name}.: No more chunks to generate')
             break
 
         arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
         p = run(arg, stderr=DEVNULL)
 
         if p.returncode != 0:
-            with process_lock:
-                print(" ".join(arg))
-                print(f'\n{color}Error generating chunk {i}')
+            logger.error(f'Error generating chunk {i} with command: {" ".join(arg)}')
             # Set a global event indicating an error has occurred across a process
             process_failure.set()
             sysexit(1)
 
-        with process_lock:
-            print(f'\n{color}Generated chunk {i} out of {chunk_range.value}')
+        logger.info(f'Finished generating chunk {i} out of {chunk_range.value}')
 
         # Combine folder paths to create chunk path and name for the original and converted chunk
         # and add them to the queue alongside the start_frame, end_frame and iter
@@ -181,26 +194,37 @@ def convert(settings: dict,
             chunk_generator_queue: multiprocessing.Queue,
             chunk_range: multiprocessing.Value,
             process_failure: multiprocessing.Event,
-            process_lock: multiprocessing.Lock,
-            chunk_concat_queue: multiprocessing.Queue,
-            color: str) -> None:
+            chunk_concat_queue: multiprocessing.Queue) -> None:
+    """
+    Converts video chunks using FFmpeg with specified settings.
+
+    Args:
+        settings (dict): A dictionary containing various conversion settings.
+        file (str): The path to the input video file.
+        chunk_generator_queue (multiprocessing.Queue): A queue for receiving video chunks to convert.
+        chunk_range (multiprocessing.Value): A shared value representing the total number of chunks.
+        process_failure (multiprocessing.Event): An event indicating if the conversion process has failed.
+        chunk_concat_queue (multiprocessing.Queue): A queue for storing the converted chunks.
+
+    Returns:
+        None
+    """
     signal(SIGINT, SIG_IGN)
-    with process_lock:
-        print(f'\n{color}Converting chunks on {multiprocessing.current_process().name}...')
+    logger = create_logger(settings['log_queue'], 'chunk_converter')
+
+    logger.info(f'Converting chunks on {multiprocessing.current_process().name}.')
 
     while not process_failure.is_set():
         attempt = 0
         crf_value = settings['initial_crf_value']
         start_frame, end_frame, i, original_chunk, converted_chunk = chunk_generator_queue.get(block=True)
         if original_chunk is None:
-            with process_lock:
-                print(f'\n{color}Stopping {multiprocessing.current_process().name}...: No more chunks to convert')
+            logger.info(f'Stopping {multiprocessing.current_process().name}: No more chunks to convert')
             break
 
         while not process_failure.is_set():
             crf_step = settings['initial_crf_step']
-            with process_lock:
-                print(f'\n{color}Converting chunk {i} out of {chunk_range.value}')
+            logger.info(f'Converting chunk {i} with CRF value {crf_value} on attempt {attempt + 1} out of {settings["max_attempts"]}')
 
             arg = ['ffmpeg', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
             if settings['ffmpeg_verbose_level'] == 0:
@@ -210,15 +234,12 @@ def convert(settings: dict,
                 p = run(arg)
 
             if p.returncode != 0:
-                with process_lock:
-                    print(" ".join(arg))
-                    print(f'\n{color}Error converting video!')
+                logger.error(f'Error converting chunk {i} with command: {" ".join(arg)}')
                 process_failure.set()
                 sysexit(1)
 
             if attempt >= settings['max_attempts']:
-                with process_lock:
-                    print(f'\n{color}Maximum amount of allowed attempts on chunk {i} exceeded. skipping...')
+                logger.error(f'Failed to convert chunk {i} after {settings["max_attempts"]} attempts. Skipping...')
                 sleep(2)
                 break
             attempt += 1
@@ -226,12 +247,10 @@ def convert(settings: dict,
             try:
                 retry = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt)
             except VMAFError:
-                with process_lock:
-                    print(f'\n{color}Error calculating VMAF score on chunk {i}. Skipping...')
+                logger.error(f'Error calculating VMAF for chunk {i} with CRF value {crf_value}. Skipping...')
                 break
             if retry is False:
-                with process_lock:
-                    print(f'\n{color}Finished processing chunk {i} out of {chunk_range.value}')
+                logger.info(f'Finished converting chunk {i} out of {chunk_range.value} with CRF value {crf_value}')
                 # Add a dictionary containing the iter and the chunk path and filename combined
                 # Using the iter as the key allows for an easy way to use them in the correct order
                 chunk_concat_queue.put({i: converted_chunk})

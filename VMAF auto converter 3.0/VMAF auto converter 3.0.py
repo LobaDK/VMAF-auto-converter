@@ -3,14 +3,13 @@ from pathlib import Path
 import signal
 import threading
 import queue
-import logging
-import logging.handlers
 from time import sleep, time
+import platform
 
 from func.encode import encoder
 from func.settings import CreateSettings, ReadSettings
 from func.temp import cleanup
-from func.log import listener_process
+from func.logger import listener_process, create_logger
 
 # Create a queue for logs
 log_queue = queue.Queue()
@@ -28,7 +27,8 @@ def signal_handler(sig, frame):
 
 # Set the signal handler and a 0 process group
 signal.signal(signal.SIGINT, signal_handler)
-os.setpgrp()  # create new process group, become its leader
+if platform.system() != 'Windows':
+    os.setpgrp()  # create new process group, become its leader
 
 
 def main():
@@ -36,10 +36,7 @@ def main():
     listener = threading.Thread(target=listener_process, args=(log_queue,))
     listener.start()
 
-    handler = logging.handlers.QueueHandler(log_queue)
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    logger = create_logger(log_queue, 'main')
 
     # Check if the settings file already exists, and if so, read it.
     # Otherwise, create one, and pause, to allow the user to edit the settings before continuing.
@@ -54,7 +51,7 @@ def main():
     try:
         os.mkdir(settings['output_dir'])
     except FileExistsError:
-        logging.info(f'Skipping creation of {settings["output_dir"]}, as it already exists.')
+        logger.debug(f'Skipping creation of {settings["output_dir"]}, as it already exists.')
         pass
 
     # Get the physical core count, used in the VMAF library.
@@ -71,19 +68,22 @@ def main():
             encoder(settings, file)
             end = time()
             print(f'\nTook {end - start} seconds')
-            logging.info(f'Took {end - start} seconds to convert {Path(file).name}')
+            logger.info(f'Took {end - start} seconds to convert {Path(file).name}')
             if settings['use_intro'] or settings['use_outro']:
                 pass  # Add intro and/or outro
         else:
             print(f'\nAlready converted {Path(file).name}. Skipping...\n')
-            logging.info(f'Already converted {Path(file).name}. Skipping...')
+            logger.info(f'Already converted {Path(file).name}. Skipping...')
             continue
 
     log_queue.put(None)
     listener.join()
-    cleanup(settings['tmp_folder'], settings['keep_tmp_files'])
+    cleanup(settings['tmp_folder'], settings['keep_tmp_files'], log_queue)
 
 
 if __name__ == '__main__':
     main()
-    signal.pause()
+    if platform.system() != 'Windows':
+        signal.pause()
+    else:
+        input("Press Enter to continue...")

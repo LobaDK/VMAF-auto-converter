@@ -2,36 +2,66 @@ from argparse import ArgumentTypeError
 from pathlib import Path
 
 
-def IntOrFloat(s: str) -> int | float:  # Return value from settings.ini or arg as int or float
-    """Attempts to convert the given string to an int or float value.
-    Returns the value as an int or float if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
+def IntOrFloat(s: str) -> int | float:
+    """
+    Convert a string to either an integer or a float.
 
-    if s.isnumeric():  # Check if the string is numeric i.e. int
+    Parameters:
+    s (str): The input string to be converted.
+
+    Returns:
+    int or float: The converted value.
+
+    Raises:
+    ArgumentTypeError: If the input string is not a valid number or decimal.
+    """
+    if s.isnumeric():
         value = int(s)
     else:
         try:
-            value = float(s)  # Attempt to convert to float, and if it fails, assume value is not int nor float
+            value = float(s)
         except ValueError:
-            raise ArgumentTypeError(f'{s} is not a valid number or decimal')  # Use argparse's TypeError exception to notify the user of a bad value
+            raise ArgumentTypeError(f'{s} is not a valid number or decimal')
     return value
 
 
-def custombool(s: str) -> bool:  # Return value from settings.ini or arg as bool
-    """Attempts to convert the given string into a boolean value.
-    Returns the converted bool if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
+def custombool(s: str) -> bool:
+    """
+    Convert a string to a boolean value.
 
-    if s.lower() in ['yes', 'enable', 'on', 'y', '1', 'true']:  # Check if the string is any of the positive values in the list, and return True if so
+    Args:
+        s (str): The string to be converted.
+
+    Returns:
+        bool: The boolean value corresponding to the input string.
+
+    Raises:
+        ArgumentTypeError: If the input string is not a valid True/False flag.
+
+    """
+    if s.lower() in ['yes', 'enable', 'on', 'y', '1', 'true']:
         return True
-    elif s.lower() in ['no', 'disable', 'off', 'n', '0', 'false']:  # Check if the string is any of the negative values in the list, and return False if so
+    elif s.lower() in ['no', 'disable', 'off', 'n', '0', 'false']:
         return False
     else:
-        raise ArgumentTypeError(f'{s} is not a valid True/False flag. Please use "yes", "enable", "on", "y", "1", or "true" for True, and "no", "disable", "off", "n", "0", or "false" for False')  # Use argparse's TypeError exception to notify the user of a bad value
+        raise ArgumentTypeError(
+            f'{s} is not a valid True/False flag. Please use "yes", "enable", "on", "y", "1", '
+            'or "true" for True, and "no", "disable", "off", "n", "0", or "false" for False')
 
 
 def IsPath(s: str) -> str:
-    """Attempts to validate if the given string representation of a path exists and is a directory.
-    Returns the path as a string if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
+    """
+    Check if the given string represents an existing directory path.
 
+    Args:
+        s (str): The string to check.
+
+    Returns:
+        str: The validated directory path.
+
+    Raises:
+        ArgumentTypeError: If the string does not exist or is not a path.
+    """
     p = Path(s)
     if p.exists():
         if p.is_dir():
@@ -40,9 +70,18 @@ def IsPath(s: str) -> str:
 
 
 def ParentExists(s: str) -> str:
-    """Attempts to validate if the given string representation of a path's parent exists.
-    Returns the path as a string if successful, otherwise, raises argparse.ArgumentTypeError if unsuccessful"""
+    """
+    Check if the parent folder of the given path exists.
 
+    Args:
+        s (str): The path to check.
+
+    Returns:
+        str: The input path if the parent folder exists.
+
+    Raises:
+        ArgumentTypeError: If the parent folder does not exist.
+    """
     p = Path(s).parent
     if p.exists():
         return str(s)
