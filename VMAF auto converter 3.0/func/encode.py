@@ -6,6 +6,8 @@ from time import sleep
 from sys import exit as sysexit
 from colorama import init, Fore
 from random import randrange
+import logging
+import logging.handlers
 
 from func.chunking import calculate, generate, convert
 from func.extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
@@ -18,10 +20,15 @@ colors = _colors.copy()
 
 
 def encoder(settings: dict, file: str) -> None:
+    handler = logging.handlers.QueueHandler(settings['log_queue'])
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     settings['attempt'] = 0
     # Get and add metadata from the input file, to settings
-    settings.update(GetAudioMetadata(settings['detect_audio_bitrate'], file))
-    settings.update(GetVideoMetadata(file))
+    settings.update(GetAudioMetadata(settings['detect_audio_bitrate'], file, settings['log_queue']))
+    settings.update(GetVideoMetadata(file, settings['log_queue']))
 
     if settings['chunk_mode'] == 0:  # ENCODING WITHOUT CHUNKS
         crf_value = settings['initial_crf_value']
@@ -30,6 +37,7 @@ def encoder(settings: dict, file: str) -> None:
         # max attempts has exceeded, or an error has occurred
         while True:
             print(f'\nConverting {Path(file).stem}...')
+            logging.info(f'Converting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
             arg = ['ffmpeg', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             if settings['ffmpeg_verbose_level'] == 0:
@@ -40,11 +48,13 @@ def encoder(settings: dict, file: str) -> None:
             if p.returncode != 0:
                 print(" ".join(arg))
                 print('\nError converting video! Skipping...')
+                logging.error(f'Error converting {Path(file).stem} with arguments: {arg}')
                 return
             print('\nVideo encoding finished!')
 
             if settings['attempt'] >= settings['max_attempts']:
                 print('\nMaximum amount of allowed attempts exceeded. skipping...')
+                logging.info(f'Maximum amount of allowed attempts exceeded for {Path(file).stem}. Skipping...')
                 sleep(2)
                 return
             settings['attempt'] += 1
@@ -54,6 +64,7 @@ def encoder(settings: dict, file: str) -> None:
                 retry = CheckVMAF(settings, crf_value, crf_step, file, converted_file, settings['attempt'])
                 if not retry:
                     print(f'\nFinished converting file {Path(converted_file).stem}')
+                    logging.info(f'Finished converting file {Path(converted_file).stem}')
                     break
                 else:
                     continue
@@ -63,84 +74,108 @@ def encoder(settings: dict, file: str) -> None:
         CreateTempFolder(settings['tmp_folder'])
         # Create empty list for starting and joining processes
         processlist = []
+        queuelist = []
 
         # Create lock used for printing and avoiding race conditions
         process_lock = Lock()
 
-        # Create event used to check for process errors
+        # Create event used to signal that a process ran into an error
         process_failure = Event()
 
+        # Create event used to signal that the audio extraction has finished
+        audio_extract_finished = Event()
+
         # Create queues used to pass data between the chunk calculator, chunk generator, chunk converter and concatenator
+        # Chunk calculator > Chunk generator
         chunk_calculate_queue = Queue()
+        queuelist.append(chunk_calculate_queue)
+        # Chunk generator > Chunk converter
         chunk_generator_queue = Queue()
+        queuelist.append(chunk_generator_queue)
+        # Chunk converter > Concatenator
         chunk_concat_queue = Queue()
+        queuelist.append(chunk_concat_queue)
 
         # Create process-safe int variable for storing the amount of calculated chunks
         chunk_range = Value('i', 0)
+        while not process_failure.is_set():
+            # If audio is detected, run separate non-blocking thread that extracts the audio
+            if settings['detected_audio_stream']:
+                AudioExtractThread = Thread(target=ExtractAudio, args=(settings,
+                                                                       file,
+                                                                       process_failure,
+                                                                       audio_extract_finished,
+                                                                       colors.pop(randrange(len(colors)))))
+                AudioExtractThread.start()
 
-        # Create events for audio extractor, chunk calculator and chunk generator starting/finishing
-        audio_extract_finished = Event()
-        chunk_calculation_started = Event()
-        chunk_calculation_finished = Event()
-        chunk_generator_started = Event()
-        chunk_generator_finished = Event()
+            # Create, start and add chunk calculator process to process list
+            chunk_calculate_process = Process(target=calculate, args=(settings,
+                                                                      file,
+                                                                      chunk_calculate_queue,
+                                                                      chunk_range,
+                                                                      process_failure,
+                                                                      process_lock,
+                                                                      colors.pop(randrange(len(colors)))))
+            chunk_calculate_process.start()
+            processlist.append(chunk_calculate_process)
 
-        # If audio is detected, run separate non-blocking thread that extracts the audio
-        if settings['detected_audio_stream']:
-            AudioExtractThread = Thread(target=ExtractAudio, args=(settings, file, process_failure, audio_extract_finished, colors.pop(randrange(len(colors)))))
-            AudioExtractThread.start()
+            # Create, start and add N chunk generator processes to the process list
+            for i in range(settings['chunk_threads']):
+                chunk_generator_process = Process(target=generate, args=(settings,
+                                                                         file,
+                                                                         chunk_calculate_queue,
+                                                                         chunk_range,
+                                                                         process_failure,
+                                                                         process_lock,
+                                                                         chunk_generator_queue,
+                                                                         colors[i]))
+                chunk_generator_process.start()
+                processlist.append(chunk_generator_process)
 
-        if process_failure.is_set():
-            with process_lock:
-                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
-            sysexit(1)
+            # Join and wait for each process to complete
+            for p in processlist:
+                p.join()
 
-        # Create, start and add chunk calculator process to process list
-        chunk_calculate_process = Process(target=calculate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, colors.pop(randrange(len(colors)))))
-        chunk_calculate_process.start()
-        processlist.append(chunk_calculate_process)
+            # Clear process list and create, start and add N chunk converter processes to the process list
+            processlist.clear()
+            for i in range(settings['chunk_threads']):
+                chunk_converter_process = Process(target=convert, args=(settings,
+                                                                        file,
+                                                                        chunk_generator_queue,
+                                                                        chunk_range,
+                                                                        process_failure,
+                                                                        process_lock,
+                                                                        chunk_concat_queue,
+                                                                        colors[i]))
+                chunk_converter_process.start()
+                processlist.append(chunk_converter_process)
 
-        # Create, start and add N chunk generator processes to the process list
-        for i in range(settings['chunk_threads']):
-            chunk_generator_process = Process(target=generate, args=(settings, file, chunk_calculate_queue, chunk_calculation_started, chunk_calculation_finished, chunk_range, process_failure, process_lock, chunk_generator_queue, chunk_generator_started, chunk_generator_finished, colors[i]))
-            chunk_generator_process.start()
-            processlist.append(chunk_generator_process)
+            # Join and wait for each process to complete
+            for p in processlist:
+                p.join()
 
-        # Join and wait for each process to complete
-        for p in processlist:
-            p.join()
+            # Wait for the audio extraction to finish before combining the chunks and audio
+            if not audio_extract_finished.is_set():
+                with process_lock:
+                    print('\nWaiting for audio to be extracted...')
+                    logging.info('Waiting for audio to be extracted...')
+                audio_extract_finished.wait()
 
-        if process_failure.is_set():
-            with process_lock:
-                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
-            sysexit(1)
+        for queue in queuelist:
+            queue.close()
 
-        # Clear process list and create, start and add N chunk converter processes to the process list
-        processlist.clear()
-        for i in range(settings['chunk_threads']):
-            chunk_converter_process = Process(target=convert, args=(settings, file, chunk_generator_queue, chunk_range, chunk_generator_started, process_failure, process_lock, chunk_generator_finished, chunk_concat_queue, colors[i]))
-            chunk_converter_process.start()
-            processlist.append(chunk_converter_process)
-
-        # Join and wait for each process to complete
-        for p in processlist:
-            p.join()
-
-        if process_failure.is_set():
-            with process_lock:
-                print('\nOne or more critical errors encountered in other threads/processes, exiting...')
-            sysexit(1)
-
-        # Wait for the audio extraction to finish before combining the chunks and audio
-        if not audio_extract_finished.is_set():
-            with process_lock:
-                print('\nWaiting for audio to be extracted...')
-            audio_extract_finished.wait()
+        for queue in queuelist:
+            queue.join_thread()
 
         concat(settings, file, chunk_concat_queue)
 
 
 def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
+    handler = logging.handlers.QueueHandler(settings['log_queue'])
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     # Create empty dictionary for storing the iter as key and filename as value, from queue
     file_list = {}
 
@@ -169,9 +204,11 @@ def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
     if p.returncode != 0:
         print(" ".join(arg))
         print('\nError converting video!')
+        logging.error(f'Error combining chunks with arguments: {arg}')
         sysexit(1)
 
     print('\nChunks successfully combined!')
+    logging.info('Chunks successfully combined!')
     sleep(3)
 
 

@@ -3,9 +3,12 @@ from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen, run
 from threading import current_thread
 import multiprocessing
+from queue import Queue
+import logging
+import logging.handlers
 
 
-def GetAudioMetadata(detect_audio_bitrate: bool, file: str) -> dict[str, int | str | bool]:
+def GetAudioMetadata(detect_audio_bitrate: bool, file: str, log_queue: Queue) -> dict[str, int | str | bool]:
     """
     Use ffprobe to get metadata from the input file's audio stream.
     Returns a dictionary with the included audio metadata.
@@ -14,6 +17,11 @@ def GetAudioMetadata(detect_audio_bitrate: bool, file: str) -> dict[str, int | s
     If an audio stream is detected, the dictionary will also contain the key "audio_codec_name".
     If detect_audio_bitrate is True and an audio stream is detected, the dictionary will also contain the key "audio_bitrate".
     """
+    handler = logging.handlers.QueueHandler(log_queue)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     audio_metadata_settings = {}
     try:
         cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
@@ -23,16 +31,19 @@ def GetAudioMetadata(detect_audio_bitrate: bool, file: str) -> dict[str, int | s
     except IndexError:
         audio_metadata_settings["detected_audio_stream"] = False
         print('\nNo audio stream detected.')
+        logging.info('No audio stream detected.')
     else:
         audio_metadata_settings["detected_audio_stream"] = True
         audio_metadata_settings['audio_codec_name'] = audio_metadata['codec_name']
+        logging.info(f'Found audio stream: {audio_metadata["codec_name"]}')
         if detect_audio_bitrate:
             audio_metadata_settings['audio_bitrate'] = audio_metadata['bit_rate']
+            logging.info(f'Found audio stream: {audio_metadata["codec_name"]}, with {audio_metadata["bit_rate"]} bitrate.')
 
     return audio_metadata_settings
 
 
-def GetVideoMetadata(file: str) -> dict[str, int]:
+def GetVideoMetadata(file: str, log_queue: Queue) -> dict[str, int]:
     """Use ffprobe to get metadata from the input file's video stream.
     Returns a dictionary with the included video metadata."""
     video_metadata_settings = {}
@@ -63,6 +74,11 @@ def GetVideoMetadata(file: str) -> dict[str, int]:
 
 def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Event, audio_extract_finished: multiprocessing.Event, color: str) -> None:
     """Use ffmpeg to extract the first audio stream from the input video."""
+    handler = logging.handlers.QueueHandler(settings['log_queue'])
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     print(f'\n{color}Extracting audio on secondary thread...')
     arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
     if settings['ffmpeg_verbose_level'] == 0:

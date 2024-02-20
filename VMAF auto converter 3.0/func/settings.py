@@ -2,8 +2,15 @@ import argparse
 from configparser import ConfigParser, Error
 from pathlib import Path
 from tempfile import gettempdir
+from queue import Queue
+import logging
+import logging.handlers
 
 import func.checks
+
+FFMPEG_VERBOSE_LEVEL_QUIET = 0
+FFMPEG_VERBOSE_LEVEL_STATS = 1
+FFMPEG_VERBOSE_LEVEL_DEFAULT = 2
 
 
 class EmptySettings(Exception):
@@ -13,8 +20,13 @@ class EmptySettings(Exception):
 config = ConfigParser()
 
 
-def CreateSettings():  # Simple method to create a settings file, either if missing or potentially broken
+def CreateSettings(log_queue: Queue):  # Simple method to create a settings file, either if missing or potentially broken
     """Creates settings.ini file using hardcoded default values. Overwrites if the file already exists."""
+    handler = logging.handlers.QueueHandler(log_queue)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     config['Input/Output settings'] = {'input_dir': 'lossless',
                                        'output_dir': 'AV1',
                                        'input_extension': 'mp4',
@@ -57,19 +69,26 @@ def CreateSettings():  # Simple method to create a settings file, either if miss
             config.write(configfile)
     except IOError as e:
         print(f'Error writing settings.ini!\n{type(e).__name__} {e}')
+        logging.error(f'Error writing settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
 
-def ReadSettings() -> dict[str, int, float, bool]:  # Simple method that reads and parses the settings file into a dictionary, and returns it
+def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:  # Simple method that reads and parses the settings file into a dictionary, and returns it
     """Reads settings.ini, iterating through each setting and assigning it to a dictionary named 'settings'.
     Uses Argparse to both validate the values and allow arguments from the terminal, using the settings dictionary as the default values.
 
     Returns a dictionary with all loaded settings."""
+    handler = logging.handlers.QueueHandler(log_queue)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     settings = {}
     try:
         config.read('settings.ini')
     except Error as e:  # Error is the baseclass exception of ConfigParser
         print(f'Error reading settings.ini!\n{type(e).__name__} {e}')
+        logging.error(f'Error reading settings.ini!\n{type(e).__name__} {e}')
         exit(1)
 
     try:
@@ -127,10 +146,13 @@ def ReadSettings() -> dict[str, int, float, bool]:  # Simple method that reads a
 
     except KeyError as e:
         print(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
+        logging.error(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
     except EmptySettings as e:
         print(e)
+        logging.error(e)
     except Exception as e:
         print(type(e).__name__, e)
+        logging.error(f'{type(e).__name__} {e}')
 
         EmptySettings_menu = None
         while EmptySettings_menu != 'Y' or EmptySettings_menu != 'N':
@@ -138,18 +160,23 @@ def ReadSettings() -> dict[str, int, float, bool]:  # Simple method that reads a
             if EmptySettings_menu == 'Y':
                 CreateSettings()
                 print('\nNew settings.ini created! Please start the program again to load the new settings.')
+                logging.info('New settings.ini created!')
                 exit(0)
             elif EmptySettings_menu == 'N':
                 exit(1)
             else:
                 print('\nOnly "y" and "n" are supported\n')
 
-    if settings['ffmpeg_verbose_level'] == 0:
+    if settings['ffmpeg_verbose_level'] == FFMPEG_VERBOSE_LEVEL_QUIET:
         settings['ffmpeg_print'] = ['-n', '-hide_banner', '-v', 'quiet']
-    elif settings['ffmpeg_verbose_level'] == 1:
+    elif settings['ffmpeg_verbose_level'] == FFMPEG_VERBOSE_LEVEL_STATS:
         settings['ffmpeg_print'] = ['-n', '-hide_banner', '-v', 'quiet', '-stats']
-    else:
+    elif settings['ffmpeg_verbose_level'] == FFMPEG_VERBOSE_LEVEL_DEFAULT:
         settings['ffmpeg_print'] = ['-n']
+    else:
+        print('Invalid ffmpeg_verbose_level. Must be 0, 1, or 2')
+        logging.warning('Invalid ffmpeg_verbose_level. Must be 0, 1, or 2')
+        exit(1)
 
     return settings
 

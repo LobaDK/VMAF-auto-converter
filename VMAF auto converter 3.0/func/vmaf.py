@@ -4,6 +4,8 @@ from os import remove
 from pathlib import Path
 from subprocess import DEVNULL, run
 from time import sleep
+import logging
+import logging.handlers
 
 
 class VMAFError(Exception):
@@ -21,7 +23,13 @@ def CheckVMAF(settings: dict,
     Returns True if the quality is within the required score or the CRF value is above or below the supported values.
     Raises a VMAFError if an error was encountered
     """
+    handler = logging.handlers.QueueHandler(settings['log_queue'])
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     print(f'\nComparing video quality of {Path(output_file).stem}...')
+    logging.info(f'Comparing video quality of {Path(output_file).stem}...')
     arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
         p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
@@ -31,6 +39,7 @@ def CheckVMAF(settings: dict,
     if p.returncode != 0:
         print(" ".join(arg))
         print('\nError comparing quality!')
+        logging.error(f'Error comparing quality of {Path(output_file).stem} with {Path(input_file).stem} using arg: {" ".join(arg)}')
         raise VMAFError('Error comparing quality')
 
     # Open the json file and get the "mean" VMAF value
