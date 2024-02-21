@@ -19,7 +19,7 @@ class EmptySettings(Exception):
 config = ConfigParser()
 
 
-def CreateSettings(log_queue: Queue):
+def CreateSettings(log_queue: Queue) -> None:
     """
     Creates a settings file with default configuration values.
 
@@ -97,7 +97,9 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
 
     try:
         for section in config:  # Loop through each [Section] in the settings file
+            logger.debug(f'Parsing section: {section}')
             for setting in config[section]:  # Loop through each key= in each [Section]
+                logger.debug(f'Parsing setting: {setting}')
                 settings[setting] = config.get(section, setting)  # Use key= to both find the value in the settings file, and create a new key with the same name in the dictionary variable
         if not settings:  # If the settings dictionary variable is empty e.g. due to the file being empty, or incorrectly being parsed, raise an exception
             raise EmptySettings('No settings found in settings.ini!')
@@ -153,8 +155,6 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
         logger.error(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
     except EmptySettings as e:
         logger.error(e)
-    except Exception as e:
-        logger.error(f'{type(e).__name__} {e}')
 
         EmptySettings_menu = None
         while EmptySettings_menu != 'Y' or EmptySettings_menu != 'N':

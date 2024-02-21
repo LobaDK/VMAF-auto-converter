@@ -1,4 +1,4 @@
-from multiprocessing import Event, Process, Queue, Value, Lock
+from multiprocessing import Event, Process, Value, Lock
 from pathlib import Path
 from subprocess import DEVNULL, run
 from threading import Thread
@@ -17,8 +17,8 @@ def encoder(settings: dict, file: str) -> None:
 
     settings['attempt'] = 0
     # Get and add metadata from the input file, to settings
-    settings.update(GetAudioMetadata(settings['detect_audio_bitrate'], file, settings['log_queue']))
-    settings.update(GetVideoMetadata(file, settings['log_queue']))
+    settings.update(GetAudioMetadata(file, settings))
+    settings.update(GetVideoMetadata(file, settings))
 
     if settings['chunk_mode'] == 0:  # ENCODING WITHOUT CHUNKS
         crf_value = settings['initial_crf_value']
@@ -64,7 +64,6 @@ def encoder(settings: dict, file: str) -> None:
         CreateTempFolder(settings['tmp_folder'])
         # Create empty list for starting and joining processes
         processlist = []
-        queuelist = []
 
         # Create lock used for printing and avoiding race conditions
         process_lock = Lock()
@@ -75,17 +74,6 @@ def encoder(settings: dict, file: str) -> None:
         # Create event used to signal that the audio extraction has finished
         audio_extract_finished = Event()
 
-        # Create queues used to pass data between the chunk calculator, chunk generator, chunk converter and concatenator
-        # Chunk calculator > Chunk generator
-        chunk_calculate_queue = Queue()
-        queuelist.append(chunk_calculate_queue)
-        # Chunk generator > Chunk converter
-        chunk_generator_queue = Queue()
-        queuelist.append(chunk_generator_queue)
-        # Chunk converter > Concatenator
-        chunk_concat_queue = Queue()
-        queuelist.append(chunk_concat_queue)
-
         # Create process-safe int variable for storing the amount of calculated chunks
         chunk_range = Value('i', 0)
         while not process_failure.is_set():
@@ -93,14 +81,12 @@ def encoder(settings: dict, file: str) -> None:
             if settings['detected_audio_stream']:
                 AudioExtractThread = Thread(target=ExtractAudio, args=(settings,
                                                                        file,
-                                                                       process_failure,
                                                                        audio_extract_finished))
                 AudioExtractThread.start()
 
             # Create, start and add chunk calculator process to process list
             chunk_calculate_process = Process(target=calculate, args=(settings,
                                                                       file,
-                                                                      chunk_calculate_queue,
                                                                       chunk_range,
                                                                       process_failure,
                                                                       process_lock))
@@ -108,14 +94,12 @@ def encoder(settings: dict, file: str) -> None:
             processlist.append(chunk_calculate_process)
 
             # Create, start and add N chunk generator processes to the process list
-            for i in range(settings['chunk_threads']):
+            for _ in range(settings['chunk_threads']):
                 chunk_generator_process = Process(target=generate, args=(settings,
                                                                          file,
-                                                                         chunk_calculate_queue,
                                                                          chunk_range,
                                                                          process_failure,
-                                                                         process_lock,
-                                                                         chunk_generator_queue))
+                                                                         process_lock))
                 chunk_generator_process.start()
                 processlist.append(chunk_generator_process)
 
@@ -125,14 +109,12 @@ def encoder(settings: dict, file: str) -> None:
 
             # Clear process list and create, start and add N chunk converter processes to the process list
             processlist.clear()
-            for i in range(settings['chunk_threads']):
+            for _ in range(settings['chunk_threads']):
                 chunk_converter_process = Process(target=convert, args=(settings,
                                                                         file,
-                                                                        chunk_generator_queue,
                                                                         chunk_range,
                                                                         process_failure,
-                                                                        process_lock,
-                                                                        chunk_concat_queue))
+                                                                        process_lock))
                 chunk_converter_process.start()
                 processlist.append(chunk_converter_process)
 
@@ -147,24 +129,28 @@ def encoder(settings: dict, file: str) -> None:
                     logger.info('Waiting for audio to be extracted...')
                 audio_extract_finished.wait()
 
-        for queue in queuelist:
-            queue.close()
-
-        for queue in queuelist:
-            queue.join_thread()
-
-        concat(settings, file, chunk_concat_queue)
+        concat(settings, file)
 
 
-def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
+def concat(settings: dict, file: str) -> None:
+    """
+    Concatenates video chunks into a single video file.
+
+    Args:
+        settings (dict): A dictionary containing various settings for the concatenation process.
+        file (str): The name of the output file.
+
+    Returns:
+        None
+    """
     logger = create_logger(settings['log_queue'], 'concat')
 
     # Create empty dictionary for storing the iter as key and filename as value, from queue
     file_list = {}
 
     # As long as the queue is not empty, grab the next item in the queue
-    while not chunk_concat_queue.empty():
-        file_list.update(chunk_concat_queue.get())
+    while not settings['chunk_concat_queue'].empty():
+        file_list.update(settings['chunk_concat_queue'].get())
 
     concat_file = open(Path(settings['tmp_folder']) / 'concatlist.txt', 'a')
     for i in range(len(file_list)):
@@ -176,7 +162,7 @@ def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
     else:
         arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', Path(settings['tmp_folder']) / 'concatlist.txt', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
 
-    print('\nCombining chunks...')
+    logger.info(f'Combining chunks with arguments: {arg}')
 
     if settings['ffmpeg_verbose_level'] == 0:
         p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
@@ -185,12 +171,9 @@ def concat(settings: dict, file: str, chunk_concat_queue: Queue) -> None:
         p = run(arg)
 
     if p.returncode != 0:
-        print(" ".join(arg))
-        print('\nError converting video!')
         logger.error(f'Error combining chunks with arguments: {arg}')
         sysexit(1)
 
-    print('\nChunks successfully combined!')
     logger.info('Chunks successfully combined!')
     sleep(3)
 

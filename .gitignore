@@ -5,3 +5,4 @@ AV1
 lossless
 *.exe
 log.json
+*.log
