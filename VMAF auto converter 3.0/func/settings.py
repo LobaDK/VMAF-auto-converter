@@ -1,8 +1,9 @@
 import argparse
-from configparser import ConfigParser, Error
+from configparser import ConfigParser
 from pathlib import Path
 from tempfile import gettempdir
-from queue import Queue
+import multiprocessing
+import traceback
 
 from func.checks import IntOrFloat, custombool, IsPath, ParentExists
 from func.logger import create_logger
@@ -19,7 +20,7 @@ class EmptySettings(Exception):
 config = ConfigParser()
 
 
-def CreateSettings(log_queue: Queue) -> None:
+def CreateSettings(log_queue: multiprocessing.Queue) -> None:
     """
     Creates a settings file with default configuration values.
 
@@ -29,7 +30,7 @@ def CreateSettings(log_queue: Queue) -> None:
     Returns:
         None
     """
-    logger = create_logger(log_queue, 'settings')
+    logger = create_logger(log_queue, 'CreateSettings')
 
     config['Input/Output settings'] = {'input_dir': 'lossless',
                                        'output_dir': 'AV1',
@@ -68,15 +69,12 @@ def CreateSettings(log_queue: Queue) -> None:
     config['Temporary settings'] = {'tmp_folder': Path(gettempdir()) / 'VMAF auto converter 3.0',
                                     'keep_tmp_files': 'no'}
 
-    try:
-        with open('settings.ini', 'w') as configfile:  # Write or overwrite the settings file, with the dictionary data previously created and added to config
-            config.write(configfile)
-    except IOError as e:
-        logger.error(f'Error writing settings.ini!\n{type(e).__name__} {e}')
-        exit(1)
+    with open('settings.ini', 'w') as configfile:  # Write or overwrite the settings file, with the dictionary data previously created and added to config
+        config.write(configfile)
+    logger.debug('Created settings.ini')
 
 
-def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
+def ReadSettings(log_queue: multiprocessing.Queue, manager_queue: multiprocessing.Queue) -> dict[str, int, float, bool]:
     """
     Reads the settings from the 'settings.ini' file and returns them as a dictionary.
 
@@ -86,21 +84,19 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
     Returns:
         dict[str, int, float, bool]: The settings read from the 'settings.ini' file.
     """
-    logger = create_logger(log_queue, 'settings')
+    logger = create_logger(log_queue, 'ReadSettings')
 
     settings = {}
-    try:
-        config.read('settings.ini')
-    except Error as e:  # Error is the baseclass exception of ConfigParser
-        logger.error(f'Error reading settings.ini!\n{type(e).__name__} {e}')
-        exit(1)
+    config.read('settings.ini')
+    logger.debug('Read settings.ini')
 
     try:
         for section in config:  # Loop through each [Section] in the settings file
             logger.debug(f'Parsing section: {section}')
             for setting in config[section]:  # Loop through each key= in each [Section]
-                logger.debug(f'Parsing setting: {setting}')
-                settings[setting] = config.get(section, setting)  # Use key= to both find the value in the settings file, and create a new key with the same name in the dictionary variable
+                value = config.get(section, setting)
+                logger.debug(f'Parsing setting: {setting} with value: {value}')
+                settings[setting] = value  # Use key= to both find the value in the settings file, and create a new key with the same name in the dictionary variable
         if not settings:  # If the settings dictionary variable is empty e.g. due to the file being empty, or incorrectly being parsed, raise an exception
             raise EmptySettings('No settings found in settings.ini!')
 
@@ -149,7 +145,11 @@ def ReadSettings(log_queue: Queue) -> dict[str, int, float, bool]:
 
         # Take dictionary-formated variables from it's namespace and overwrite the settings.
         # Non-specified args simply re-use the value from the settings, through the default= flag in add_argument
-        settings = vars(parser.parse_args())
+        try:
+            settings = vars(parser.parse_args())
+        except SystemExit as e:
+            manager_queue.put(('ArgumentTypeError', e.args, traceback.format_exc()))
+            raise
 
     except KeyError as e:
         logger.error(f'Error applying settings from settings.ini!\n{type(e).__name__} {e}')
