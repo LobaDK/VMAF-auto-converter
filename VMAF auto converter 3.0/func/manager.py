@@ -1,5 +1,8 @@
 import multiprocessing
 from func.logger import create_logger
+import traceback
+from types import TracebackType
+from typing import Type
 
 
 class NamedQueue:
@@ -24,6 +27,50 @@ class NamedQueue:
         self.queue.close()
 
 
+class ExceptionHandler:
+    """
+    Class to handle unhandled exceptions and log them.
+
+    Args:
+        log_queue (NamedQueue): A queue for logging messages.
+        manager_queue (multiprocessing.Queue): A queue for communication with the manager process.
+
+    """
+
+    def __init__(self, log_queue: NamedQueue, manager_queue: multiprocessing.Queue):
+        self.log_queue = log_queue
+        self.manager_queue = manager_queue
+        self.logger = create_logger(self.log_queue, 'ExceptionHandler')
+
+    def handle_exception(self, exc_type: Type[BaseException], exc_value: BaseException, exc_traceback: TracebackType):
+        """
+        Handles an unhandled exception.
+
+        Args:
+            exc_type (type): The type of the exception.
+            exc_value (Exception): The exception object.
+            exc_traceback (traceback): The traceback object.
+
+        """
+        self.logger.debug('Caught unhandled exception')
+        formatted_traceback = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        self.manager_queue.put((exc_type, exc_value, formatted_traceback))
+
+
+def custom_exit(manager_queue: multiprocessing.Queue) -> None:
+    """
+    Exits the program and sends a None to the manager queue to stop the queue manager.
+
+    Args:
+        manager_queue (multiprocessing.Queue): The queue used for receiving exceptions.
+
+    Returns:
+        None
+    """
+    manager_queue.put(None)
+    exit(1)
+
+
 def queue_manager(queue_list: list[NamedQueue], manager_queue: multiprocessing.Queue, log_queue: NamedQueue) -> None:
     """
     Manages the queues used in the VMAF auto converter.
@@ -43,16 +90,14 @@ def queue_manager(queue_list: list[NamedQueue], manager_queue: multiprocessing.Q
     if isinstance(e, tuple):
         exception, args, traceback = e
     else:
-        exception = e
-        args = None
-        traceback = None
+        exception = e  # If the exception is not a tuple, it is a None, which acts as our sentinel value
     if exception != 'ArgumentTypeError' and exception is not None:
         logger.error(f'An exception occurred: {exception} with args {args} and traceback {traceback}')
     for q in queue_list:
         logger.debug(f'Closing queue {q.name}')
         q.close()
-    # Send a None to the log queue to stop the listener
     logger.debug('Telling the listener to stop')
+    # Send a None to the log queue to stop the listener
     log_queue.put(None)
     return
 

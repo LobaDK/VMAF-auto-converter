@@ -4,13 +4,13 @@ import multiprocessing
 import signal
 import threading
 import time
-import traceback
+import sys
 
 from func.encode import encoder
 from func.settings import CreateSettings, ReadSettings
 from func.temp import cleanup
 from func.logger import listener_process, create_logger
-from func.manager import queue_manager, NamedQueue
+from func.manager import queue_manager, NamedQueue, ExceptionHandler
 
 settings = None
 
@@ -19,12 +19,14 @@ manager_queue = multiprocessing.Queue()
 # Create a queue for logs
 log_queue = NamedQueue('log_queue')
 
+handler = ExceptionHandler(log_queue, manager_queue)
+sys.excepthook = handler.handle_exception
+
 
 # Signal handler that catches all SIGINTs (CTRL + C) across the main script, threads and processes.
 def signal_handler(sig, frame):
     logger = create_logger(log_queue, 'SignalHandler')
     logger.debug('Caught SIGINT')
-    logger.debug('Terminating all processes')
     for proc in multiprocessing.active_children():
         proc.terminate()
         logger.debug(f'Terminated {proc.name}')
@@ -40,6 +42,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 
 def main():
+    # Make settings global, so they can be accessed from anywhere in the script
     global settings
     # Create a listener process that handles all logs sent to the queue
     listener = threading.Thread(target=listener_process, args=(log_queue,))
@@ -95,6 +98,7 @@ def main():
     # Iterate through each file that ends with an extension matching the specified extension.
     files = list(pathlib.Path(settings['input_dir']).glob(f'*.{settings["input_extension"]}'))
     if len(files) > 0:
+        logger.debug(f'Found {len(files)} files with the extension {settings["input_extension"]}')
         for file in files:
             settings['crf_value'] = settings['initial_crf_value']
             # Check if a file with the same filename already exists in the output folder, and assume it has already been converted.
@@ -105,7 +109,7 @@ def main():
                 end = time()
                 logger.info(f'Took {end - start} seconds to convert {pathlib.Path(file).name}')
                 if settings['use_intro'] or settings['use_outro']:
-                    pass  # Add intro and/or outro
+                    raise NotImplementedError('Intro and outro not yet implemented')
             else:
                 logger.info(f'Already converted {pathlib.Path(file).name}. Skipping...')
                 continue
@@ -117,8 +121,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # Run the main function in a try-except block to catch any exceptions and send them to the manager queue.
-    try:
-        main()
-    except Exception as e:
-        manager_queue.put(type(e), e.args, traceback.format_exc())
+    main()

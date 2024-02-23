@@ -19,21 +19,21 @@ def listener_process(log_queue: multiprocessing.Queue) -> None:
     # Set the log level
     logger.setLevel(logging.DEBUG)  # Set to lowest level
 
-    # Create a FileHandler in append mode
+    # Create a FileHandler in write mode
     file_handler = logging.FileHandler('logfile.log', 'w')
 
     # Create a StreamHandler for console output
     stream_handler = logging.StreamHandler()
 
     # Create a Formatter
-    file_formatter = logging.Formatter('%(asctime)s - %(name)-15s - %(levelname)s - %(message)s')
+    file_formatter = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)s - %(message)s')
     stream_formatter = logging.Formatter('\n%(name)s[%(levelname)s]: %(message)s')
 
     # Set the Formatter on the Handlers
     file_handler.setFormatter(file_formatter)
     stream_handler.setFormatter(stream_formatter)
 
-    # Set the log level on the Handlers
+    # Set the log level on the Handlers so that debugging messages are not printed to the console
     file_handler.setLevel(logging.DEBUG)  # Will handle all messages
     stream_handler.setLevel(logging.INFO)  # Will handle only INFO and above
 
@@ -49,6 +49,7 @@ def listener_process(log_queue: multiprocessing.Queue) -> None:
         if log is None:
             log_queue.close()
             log_queue.join_thread()
+            # This doesn't use the queue, so it can still be logged after closing
             logger.debug('Listener thread stopped')
             break
 
@@ -70,7 +71,6 @@ def create_logger(log_queue: multiprocessing.Queue, logger_name: str) -> logging
     logger = logging.getLogger(logger_name)
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
-    logger.debug(f'Logger for {logger_name} created')
 
     return logger
 
