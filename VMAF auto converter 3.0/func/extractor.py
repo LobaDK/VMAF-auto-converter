@@ -4,6 +4,7 @@ from subprocess import DEVNULL, PIPE, Popen, run
 from func.logger import create_logger
 from func.manager import ExceptionHandler
 import sys
+import multiprocessing
 
 
 def GetAudioMetadata(file: str, settings: dict) -> dict[str, int | str | bool]:
@@ -86,13 +87,14 @@ def GetVideoMetadata(file: str, settings: dict) -> dict[str, int]:
     return video_metadata_settings
 
 
-def ExtractAudio(settings: dict, file: str) -> None:
+def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Event) -> None:
     """
     Extracts audio from a video file using FFmpeg.
 
     Args:
         settings (dict): A dictionary containing various settings for the audio extraction process.
         file (str): The path to the video file from which audio needs to be extracted.
+        process_failure (multiprocessing.Event): Event to signal that an error occurred during the audio extraction process.
 
     Returns:
         None
@@ -111,6 +113,7 @@ def ExtractAudio(settings: dict, file: str) -> None:
         run(arg)
 
     if not Path(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}').exists():
+        process_failure.set()
         raise FileNotFoundError(f'Could not find audio file. Did audio extraction fail for {file}?')
 
     logger.info(f'Extracted audio from {file}.')

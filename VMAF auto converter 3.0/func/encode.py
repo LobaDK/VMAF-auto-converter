@@ -80,7 +80,8 @@ def encoder(settings: dict, file: str) -> None:
             if settings['detected_audio_stream']:
                 AudioExtractThread = Thread(target=ExtractAudio,
                                             args=(settings,
-                                                  file))
+                                                  file,
+                                                  process_failure))
                 AudioExtractThread.start()
 
             # Create, start and add chunk calculator process to process list

@@ -132,16 +132,19 @@ def calculate(settings: dict,
                 settings['chunk_calculate_queue'].put((start_frame, end_frame, chunk_count, chunk))
                 with chunk_range.get_lock():
                     chunk_range.value += 1
+        else:
+            if process_failure.is_set():
+                custom_exit(settings['manager_queue'])
 
     except Exception as e:
         logger.error(f'Error calculating chunks: {e}')
         # Set a global event indicating an error has occurred across a process
         process_failure.set()
         custom_exit(settings['manager_queue'])
-
-    settings['chunk_calculate_queue'].put(None)
-    logger.info(f'Finished calculating chunks on {multiprocessing.current_process().name}.')
-    return
+    else:
+        settings['chunk_calculate_queue'].put(None)
+        logger.info(f'Finished calculating chunks on {multiprocessing.current_process().name}.')
+        return
 
 
 def generate(settings: dict,
@@ -166,40 +169,49 @@ def generate(settings: dict,
     logger = create_logger(settings['log_queue'], 'chunk_generator')
 
     logger.info(f'Generating chunks on {multiprocessing.current_process().name}.')
+    try:
+        while not process_failure.is_set():
+            item = settings['chunk_calculate_queue'].get(block=True)
+            if isinstance(item, tuple) and len(item) == 4:
+                logger.debug(f'Received item {item}')
+                start_frame, end_frame, i, chunk = item
+            elif isinstance(item, None.__class__):
+                settings['chunk_generator_queue'].put(None)
+                logger.info(f'Stopping {multiprocessing.current_process().name}.: No more chunks to generate')
+                break
+            else:
+                logger.error(f'Invalid item received from chunk_calculate_queue: {item}')
+                process_failure.set()
+                custom_exit(settings['manager_queue'])
 
-    while not process_failure.is_set():
-        item = settings['chunk_calculate_queue'].get(block=True)
-        if isinstance(item, tuple) and len(item) == 4:
-            logger.debug(f'Received item {item}')
-            start_frame, end_frame, i, chunk = item
-        elif isinstance(item, None.__class__):
-            settings['chunk_generator_queue'].put(None)
-            logger.info(f'Stopping {multiprocessing.current_process().name}.: No more chunks to generate')
-            break
+            arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
+            p = run(arg, stderr=DEVNULL)
+
+            if p.returncode != 0:
+                logger.error(f'Error generating chunk {i} with command: {" ".join(arg)}')
+                # Set a global event indicating an error has occurred across a process
+                process_failure.set()
+                custom_exit(settings['manager_queue'])
+
+            logger.info(f'Finished generating chunk {i} out of {chunk_range.value}')
+
+            # Combine folder paths to create chunk path and name for the original and converted chunk
+            # and add them to the queue alongside the start_frame, end_frame and iter
+            original_chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
+            converted_chunk = Path(settings['tmp_folder']) / 'converted' / f'chunk{i}.{settings["output_extension"]}'
+            logger.debug(f'Adding chunk {i} to queue with start_frame {start_frame} and end_frame {end_frame}')
+            settings['chunk_generator_queue'].put((start_frame, end_frame, i, original_chunk, converted_chunk))
         else:
-            logger.error(f'Invalid item received from chunk_calculate_queue: {item}')
-            process_failure.set()
-            custom_exit(settings['manager_queue'])
+            if process_failure.is_set():
+                custom_exit(settings['manager_queue'])
 
-        arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
-        p = run(arg, stderr=DEVNULL)
-
-        if p.returncode != 0:
-            logger.error(f'Error generating chunk {i} with command: {" ".join(arg)}')
-            # Set a global event indicating an error has occurred across a process
-            process_failure.set()
-            custom_exit(settings['manager_queue'])
-
-        logger.info(f'Finished generating chunk {i} out of {chunk_range.value}')
-
-        # Combine folder paths to create chunk path and name for the original and converted chunk
-        # and add them to the queue alongside the start_frame, end_frame and iter
-        original_chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
-        converted_chunk = Path(settings['tmp_folder']) / 'converted' / f'chunk{i}.{settings["output_extension"]}'
-        logger.debug(f'Adding chunk {i} to queue with start_frame {start_frame} and end_frame {end_frame}')
-        settings['chunk_generator_queue'].put((start_frame, end_frame, i, original_chunk, converted_chunk))
-
-    return
+    except Exception as e:
+        logger.error(f'Error generating chunks: {e}')
+        # Set a global event indicating an error has occurred across a process
+        process_failure.set()
+        custom_exit(settings['manager_queue'])
+    else:
+        return
 
 
 def convert(settings: dict,
