@@ -104,9 +104,9 @@ def main():
             # Check if a file with the same filename already exists in the output folder, and assume it has already been converted.
             if not list(pathlib.Path(settings['output_dir']).glob(f'{pathlib.Path(file).stem}.*')):
                 settings['log_queue'] = log_queue
-                start = time()
+                start = time.time()
                 encoder(settings, file)
-                end = time()
+                end = time.time()
                 logger.info(f'Took {end - start} seconds to convert {pathlib.Path(file).name}')
                 if settings['use_intro'] or settings['use_outro']:
                     raise NotImplementedError('Intro and outro not yet implemented')

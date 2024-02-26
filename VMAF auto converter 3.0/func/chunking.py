@@ -4,7 +4,6 @@ import multiprocessing
 from pathlib import Path
 from subprocess import DEVNULL, run
 from time import sleep
-from signal import signal, SIG_IGN, SIGINT
 import sys
 
 from func.logger import create_logger
@@ -36,7 +35,7 @@ def calculate(settings: dict,
     sys.excepthook = handler.handle_exception
     logger = create_logger(settings['log_queue'], 'chunk_calculate')
 
-    logger.info(f'Calculating chunks on {multiprocessing.current_process().name}.')
+    logger.info('Calculating chunks')
     start_frame = 0
     chunk_count = 0
     try:
@@ -61,6 +60,7 @@ def calculate(settings: dict,
                     # Increase calculated chunks by one
                     with chunk_range.get_lock():
                         chunk_range.value += 1
+                break
 
             elif settings['chunk_mode'] == FIXED_LENGTH_CHUNKS:  # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT INTO n LONG CHUNKS
                 logger.debug(f'Calculating chunks with length {settings["chunk_length"]} seconds')
@@ -89,14 +89,15 @@ def calculate(settings: dict,
                     # Increase calculated chunks by one
                     with chunk_range.get_lock():
                         chunk_range.value += 1
+                break
 
             elif settings['chunk_mode'] == KEYFRAME_BASED_CHUNKS:  # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT BY EVERY KEYFRAME
                 # Use ffprobe to read each frame and it's flags. A flag of "K" means it's a keyframe.
                 logger.debug('Calculating chunks based on keyframes')
-                cmd = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
-                p = run(cmd, capture_output=True)
+                arg = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
+                p = run(arg, capture_output=True)
                 if p.returncode != 0:
-                    logger.error(f'Error calculating keyframes: {p.stderr.decode()} with command: {" ".join(cmd)}')
+                    logger.error(f'Error calculating keyframes: {p.stderr.decode()} with command: {" ".join(str(item) for item in arg)}')
                     process_failure.set()
                     custom_exit(settings['manager_queue'])
 
@@ -132,6 +133,7 @@ def calculate(settings: dict,
                 settings['chunk_calculate_queue'].put((start_frame, end_frame, chunk_count, chunk))
                 with chunk_range.get_lock():
                     chunk_range.value += 1
+                break
         else:
             if process_failure.is_set():
                 custom_exit(settings['manager_queue'])
@@ -142,8 +144,10 @@ def calculate(settings: dict,
         process_failure.set()
         custom_exit(settings['manager_queue'])
     else:
-        settings['chunk_calculate_queue'].put(None)
-        logger.info(f'Finished calculating chunks on {multiprocessing.current_process().name}.')
+        # Ensure each chunk generator process is stopped
+        for _ in range(settings['chunk_threads']):
+            settings['chunk_calculate_queue'].put(None)
+        logger.info('Finished calculating chunks')
         return
 
 
@@ -166,9 +170,9 @@ def generate(settings: dict,
     handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
     sys.excepthook = handler.handle_exception
 
-    logger = create_logger(settings['log_queue'], 'chunk_generator')
+    logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_generator')
 
-    logger.info(f'Generating chunks on {multiprocessing.current_process().name}.')
+    logger.info('Generating chunk')
     try:
         while not process_failure.is_set():
             item = settings['chunk_calculate_queue'].get(block=True)
@@ -177,7 +181,7 @@ def generate(settings: dict,
                 start_frame, end_frame, i, chunk = item
             elif isinstance(item, None.__class__):
                 settings['chunk_generator_queue'].put(None)
-                logger.info(f'Stopping {multiprocessing.current_process().name}.: No more chunks to generate')
+                logger.info(f'Stopping {multiprocessing.current_process().name}: No more chunks to generate')
                 break
             else:
                 logger.error(f'Invalid item received from chunk_calculate_queue: {item}')
@@ -188,7 +192,7 @@ def generate(settings: dict,
             p = run(arg, stderr=DEVNULL)
 
             if p.returncode != 0:
-                logger.error(f'Error generating chunk {i} with command: {" ".join(arg)}')
+                logger.error(f'Error generating chunk {i} with command: {" ".join(str(item) for item in arg)}')
                 # Set a global event indicating an error has occurred across a process
                 process_failure.set()
                 custom_exit(settings['manager_queue'])
@@ -230,59 +234,74 @@ def convert(settings: dict,
     Returns:
         None
     """
-    signal(SIGINT, SIG_IGN)
-    logger = create_logger(settings['log_queue'], 'chunk_converter')
+    handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
+    sys.excepthook = handler.handle_exception
+    logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_converter')
 
-    logger.info(f'Converting chunks on {multiprocessing.current_process().name}.')
+    try:
+        while not process_failure.is_set():
+            attempt = 0
+            crf_value = settings['initial_crf_value']
+            item = settings['chunk_generator_queue'].get(block=True)
+            if isinstance(item, tuple) and len(item) == 5:
+                start_frame, end_frame, i, original_chunk, converted_chunk = item
+            elif isinstance(item, None.__class__):
+                logger.info(f'Stopping {multiprocessing.current_process().name}: No more chunks to convert')
+                break
+            else:
+                logger.error(f'Invalid item received from chunk_generator_queue: {item}')
+                process_failure.set()
+                custom_exit(settings['manager_queue'])
 
-    while not process_failure.is_set():
-        attempt = 0
-        crf_value = settings['initial_crf_value']
-        item = settings['chunk_generator_queue'].get(block=True)
-        if isinstance(item, tuple) and len(item) == 5:
-            start_frame, end_frame, i, original_chunk, converted_chunk = item
-        elif isinstance(item, None.__class__):
-            logger.info(f'Stopping {multiprocessing.current_process().name}: No more chunks to convert')
-            break
+            crf_step = settings['initial_crf_step']
+            while True:
+                logger.info(f'Converting chunk {i} with CRF value {crf_value} on attempt {attempt + 1} out of {settings["max_attempts"]}')
+
+                # TODO: Longer/Larger chunks, or a high preset, can cause the process to take a very long time.
+                # Maybe add some code that occasionally prints the progress of the conversion process?
+                arg = ['ffmpeg', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
+                if settings['ffmpeg_verbose_level'] == 0:
+                    p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+                else:
+                    arg[1:1] = settings['ffmpeg_print']
+                    p = run(arg)
+
+                if p.returncode != 0:
+                    logger.error(f'Error converting chunk {i} with command: {" ".join(str(item) for item in arg)}')
+                    process_failure.set()
+                    custom_exit(settings['manager_queue'])
+
+                if attempt >= settings['max_attempts']:
+                    logger.error(f'Failed to convert chunk {i} after {settings["max_attempts"]} attempts. Skipping...')
+                    sleep(2)
+                    break
+                attempt += 1
+
+                try:
+                    # TODO: Not sure why I removed the crf_value return value,
+                    # as it clearly needs it to adjust the CRF value. Will fix this in the next commit
+                    retry = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt)
+                except VMAFError:
+                    logger.error(f'Error calculating VMAF for chunk {i} with CRF value {crf_value}. Skipping...')
+                    break
+                if retry is False:
+                    logger.info(f'Finished converting chunk {i} out of {chunk_range.value} with CRF value {crf_value}')
+                    # Add a dictionary containing the iter and the chunk path and filename combined
+                    # Using the iter as the key allows for an easy way to use them in the correct order later on
+                    settings['chunk_concat_queue'].put({i: converted_chunk})
+                    break
+                else:
+                    continue
         else:
-            logger.error(f'Invalid item received from chunk_generator_queue: {item}')
-            process_failure.set()
-            sysexit(1)
-
-        crf_step = settings['initial_crf_step']
-        logger.info(f'Converting chunk {i} with CRF value {crf_value} on attempt {attempt + 1} out of {settings["max_attempts"]}')
-
-        arg = ['ffmpeg', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
-        if settings['ffmpeg_verbose_level'] == 0:
-            p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
-        else:
-            arg[1:1] = settings['ffmpeg_print']
-            p = run(arg)
-
-        if p.returncode != 0:
-            logger.error(f'Error converting chunk {i} with command: {" ".join(arg)}')
-            process_failure.set()
-            sysexit(1)
-
-        if attempt >= settings['max_attempts']:
-            logger.error(f'Failed to convert chunk {i} after {settings["max_attempts"]} attempts. Skipping...')
-            sleep(2)
-            break
-        attempt += 1
-
-        try:
-            retry = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt)
-        except VMAFError:
-            logger.error(f'Error calculating VMAF for chunk {i} with CRF value {crf_value}. Skipping...')
-            break
-        if retry is False:
-            logger.info(f'Finished converting chunk {i} out of {chunk_range.value} with CRF value {crf_value}')
-            # Add a dictionary containing the iter and the chunk path and filename combined
-            # Using the iter as the key allows for an easy way to use them in the correct order
-            settings['chunk_concat_queue'].put({i: converted_chunk})
-            break
-        else:
-            continue
+            if process_failure.is_set():
+                custom_exit(settings['manager_queue'])
+    except Exception as e:
+        logger.error(f'Error converting chunks: {e}')
+        # Set a global event indicating an error has occurred across a process
+        process_failure.set()
+        custom_exit(settings['manager_queue'])
+    else:
+        return
 
 
 if __name__ == '__main__':

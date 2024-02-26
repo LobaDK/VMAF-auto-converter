@@ -26,6 +26,9 @@ class NamedQueue:
     def close(self):
         self.queue.close()
 
+    def empty(self):
+        return self.queue.empty()
+
 
 class ExceptionHandler:
     """

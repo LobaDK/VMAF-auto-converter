@@ -41,7 +41,7 @@ def CheckVMAF(settings: dict,
         arg[1:1] = settings['ffmpeg_print']
         p = run(arg)
     if p.returncode != 0:
-        logger.error(f'Error comparing quality of {Path(output_file).stem} with {Path(input_file).stem} using arg: {" ".join(arg)}')
+        logger.error(f'Error comparing quality of {Path(output_file).stem} with {Path(input_file).stem} using arg: {" ".join(str(item) for item in arg)}')
         raise VMAFError('Error comparing quality')
 
     # Open the json file and get the "mean" VMAF value

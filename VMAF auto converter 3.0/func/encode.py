@@ -1,4 +1,4 @@
-from multiprocessing import Event, Process, Value, Lock
+from multiprocessing import Event, Process, Value
 from pathlib import Path
 from subprocess import DEVNULL, run
 from threading import Thread
@@ -62,12 +62,9 @@ def encoder(settings: dict, file: str) -> None:
             except VMAFError:
                 break
     else:
-        CreateTempFolder(settings['tmp_folder'])
+        CreateTempFolder(settings['tmp_folder'], settings['log_queue'])
         # Create empty list for starting and joining processes
         processlist = []
-
-        # Create lock used for printing and avoiding race conditions
-        process_lock = Lock()
 
         # Create event used to signal that a process ran into an error
         process_failure = Event()
@@ -89,8 +86,7 @@ def encoder(settings: dict, file: str) -> None:
                                               args=(settings,
                                                     file,
                                                     chunk_range,
-                                                    process_failure,
-                                                    process_lock))
+                                                    process_failure))
             chunk_calculate_process.start()
             processlist.append(chunk_calculate_process)
 
@@ -100,8 +96,7 @@ def encoder(settings: dict, file: str) -> None:
                                                   args=(settings,
                                                         file,
                                                         chunk_range,
-                                                        process_failure,
-                                                        process_lock))
+                                                        process_failure))
                 chunk_generator_process.start()
                 processlist.append(chunk_generator_process)
 
@@ -111,8 +106,7 @@ def encoder(settings: dict, file: str) -> None:
                                                   args=(settings,
                                                         file,
                                                         chunk_range,
-                                                        process_failure,
-                                                        process_lock))
+                                                        process_failure))
                 chunk_converter_process.start()
                 processlist.append(chunk_converter_process)
 
@@ -124,6 +118,7 @@ def encoder(settings: dict, file: str) -> None:
             if AudioExtractThread.is_alive():
                 logger.info('Waiting for audio extraction to finish...')
                 AudioExtractThread.join()
+            break
         else:
             if process_failure.is_set():
                 logger.error('An error occurred during chunking. Exiting...')

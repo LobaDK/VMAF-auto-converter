@@ -29,9 +29,9 @@ def GetAudioMetadata(file: str, settings: dict) -> dict[str, int | str | bool]:
 
     audio_metadata_settings = {}
     try:
-        cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
-        logger.debug(f'Running command: {" ".join(cmd)}')
-        audio_stream = Popen(cmd, stdout=PIPE, stderr=PIPE)
+        arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
+        logger.debug(f'Running command: {" ".join(str(item) for item in arg)}')
+        audio_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
         stdout, _ = audio_stream.communicate()
         audio_metadata = loads(stdout)['streams'][0]
     except IndexError:
@@ -64,7 +64,7 @@ def GetVideoMetadata(file: str, settings: dict) -> dict[str, int]:
     logger = create_logger(settings['log_queue'], 'video_metadata')
     video_metadata_settings = {}
     arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]
-    logger.debug(f'Running command: {" ".join(arg)}')
+    logger.debug(f'Running command: {" ".join(str(item) for item in arg)}')
     video_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
     stdout, stderr = video_stream.communicate()
     try:
@@ -83,7 +83,7 @@ def GetVideoMetadata(file: str, settings: dict) -> dict[str, int]:
             while not fps.isnumeric() or int(fps) <= 0:
                 fps = input('\nManual input required: ')
         video_metadata_settings['fps'] = int(fps)
-
+        logger.debug(f'Found video stream: {video_metadata["codec_name"]}, with {video_metadata_settings["total_frames"]} frames and {video_metadata_settings["fps"]} fps.')
     return video_metadata_settings
 
 
@@ -105,7 +105,7 @@ def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Eve
     logger = create_logger(settings['log_queue'], 'audio_extractor')
 
     arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
-    logger.debug(f'Extracting audio with command: {" ".join(arg)}')
+    logger.debug(f'Extracting audio with command: {" ".join(str(item) for item in arg)}')
     if settings['ffmpeg_verbose_level'] == 0:
         run(arg, stderr=DEVNULL, stdout=DEVNULL)
     else:
@@ -117,6 +117,7 @@ def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Eve
         raise FileNotFoundError(f'Could not find audio file. Did audio extraction fail for {file}?')
 
     logger.info(f'Extracted audio from {file}.')
+    return
 
 
 if __name__ == '__main__':

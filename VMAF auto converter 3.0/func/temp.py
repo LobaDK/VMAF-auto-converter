@@ -1,11 +1,11 @@
 import os
 from pathlib import Path
 from shutil import rmtree
-from queue import Queue
+import multiprocessing
 from func.logger import create_logger
 
 
-def cleanup(tmp_folder: str, keep_tmp_files: bool, log_queue: Queue) -> None:
+def cleanup(tmp_folder: str, keep_tmp_files: bool, log_queue: multiprocessing.Queue) -> None:
     """
     Cleans up temporary files.
 
@@ -37,7 +37,7 @@ def cleanup(tmp_folder: str, keep_tmp_files: bool, log_queue: Queue) -> None:
         tmpcleanup(tmp_folder, log_queue)
 
 
-def tmpcleanup(tmp_folder: str, log_queue: Queue) -> None:
+def tmpcleanup(tmp_folder: str, log_queue: multiprocessing.Queue) -> None:
     """
     Clean up the temporary folder.
 
@@ -60,7 +60,7 @@ def tmpcleanup(tmp_folder: str, log_queue: Queue) -> None:
         logger.error(f"Error cleaning up temp directory: {e.strerror}")
 
 
-def CreateTempFolder(tmp_folder: str) -> None:
+def CreateTempFolder(tmp_folder: str, log_queue: multiprocessing.Queue) -> None:
     """
     Create temporary folders for processing.
 
@@ -70,11 +70,14 @@ def CreateTempFolder(tmp_folder: str) -> None:
     Returns:
         None
     """
+    logger = create_logger(log_queue, 'CreateTempFolder')
     directories = [tmp_folder, Path(tmp_folder) / 'prepared', Path(tmp_folder) / 'converted']
 
     for directory in directories:
         if Path(directory).exists():
-            tmpcleanup(tmp_folder)
+            logger.debug(f"Deleting existing directory: {directory}...")
+            tmpcleanup(tmp_folder, log_queue)
+        logger.debug(f"Creating directory: {directory}...")
         os.mkdir(directory)
 
 
