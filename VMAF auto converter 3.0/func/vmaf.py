@@ -3,8 +3,7 @@ from json import loads
 from os import remove
 from pathlib import Path
 from subprocess import DEVNULL, run
-from time import sleep
-from func.logger import create_logger
+import logging
 
 
 class VMAFError(Exception):
@@ -16,7 +15,8 @@ def CheckVMAF(settings: dict,
               crf_step: int,
               input_file: str,
               output_file: str,
-              attempt: int) -> bool:
+              attempt: int,
+              logger: logging.Logger) -> bool:
     """
     Check the VMAF (Video Multimethod Assessment Fusion) value of a video file and adjust the CRF (Constant Rate Factor) value based on the VMAF range.
 
@@ -27,12 +27,11 @@ def CheckVMAF(settings: dict,
         input_file (str): The path to the input video file.
         output_file (str): The path to the output video file.
         attempt (int): The number of attempts made to adjust the CRF value.
+        logger (logging.Logger): The logger object used for logging messages.
 
     Returns:
         bool: True if the CRF value was adjusted and the file should be reprocessed, False if the file should be skipped and the next one should be processed.
     """
-    logger = create_logger(settings['log_queue'], 'VMAF')
-
     logger.info(f'Comparing video quality of {Path(output_file).stem}...')
     arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
@@ -71,15 +70,14 @@ def CheckVMAF(settings: dict,
                       """
             logger.info(message.strip())
 
-            sleep(2)
             crf_value -= crf_step
             if not 1 <= crf_value <= 63:
                 logger.info('CRF value out of range (1-63). Skipping...')
                 # Return False instead of True to skip the file and continue with the next one
-                return False
+                return False, crf_value
             # Delete converted file to avoid FFmpeg skipping it
             remove(output_file)
-            return True
+            return True, crf_value
 
         # If VMAF value is above the maximum range
         elif vmaf_value > settings["vmaf_max_value"]:
@@ -101,15 +99,14 @@ def CheckVMAF(settings: dict,
                       """
             logger.info(message.strip())
 
-            sleep(2)
             crf_value += crf_step
             if not 1 <= crf_value <= 63:
                 logger.info('CRF value out of range (1-63). Skipping...')
                 # Return False instead of True to skip the file and continue with the next one
-                return False
+                return False, crf_value
             # Delete converted file to avoid FFmpeg skipping it
             remove(output_file)
-            return True
+            return True, crf_value
     else:
         message = f"""
                   File {Path(output_file).stem} complete:
@@ -117,8 +114,7 @@ def CheckVMAF(settings: dict,
                   attempts: {attempt}
                   """
         logger.info(message.strip())
-        sleep(3)
-        return False
+        return False, crf_value
 
 
 if __name__ == '__main__':

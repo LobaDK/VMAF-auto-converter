@@ -146,13 +146,14 @@ def concat(settings: dict, file: str) -> None:
     logger.info('Getting the chunks from the queue...')
     # As long as the queue is not empty, grab the next item in the queue
     while not settings['chunk_concat_queue'].empty():
-        file_list.update(settings['chunk_concat_queue'].get())
-        logger.debug(f'Added {file_list} to file list')
+        _file_list = settings['chunk_concat_queue'].get()
+        file_list.update(_file_list)
+        logger.debug(f'Added {_file_list} to file list')
 
     logger.info('Creating file list...')
     # Create a file that contains the list of files to concatenate
     concat_file = open(Path(settings['tmp_folder']) / 'concatlist.txt', 'a')
-    for i in range(len(1, file_list + 1)):
+    for i in range(1, len(file_list) + 1):
         concat_file.write(f"file '{file_list[i]}'\n")
         logger.debug(f'Wrote {file_list[i]} to concatlist.txt')
     concat_file.close()

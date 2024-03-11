@@ -237,6 +237,7 @@ def convert(settings: dict,
     handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
     sys.excepthook = handler.handle_exception
     logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_converter')
+    logger = create_logger(settings['log_queue'], 'VMAF')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
 
     try:
         while not process_failure.is_set():
@@ -278,9 +279,7 @@ def convert(settings: dict,
                 attempt += 1
 
                 try:
-                    # TODO: Not sure why I removed the crf_value return value,
-                    # as it clearly needs it to adjust the CRF value. Will fix this in the next commit
-                    retry = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt)
+                    retry, crf_value = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt, logger)
                 except VMAFError:
                     logger.error(f'Error calculating VMAF for chunk {i} with CRF value {crf_value}. Skipping...')
                     break
