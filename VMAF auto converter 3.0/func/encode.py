@@ -34,7 +34,7 @@ def encoder(settings: dict, file: str) -> None:
         while True:
             logger.info(f'Converting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
-            arg = ['ffmpeg', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
+            arg = ['ffmpeg', '-nostdin', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             if settings['ffmpeg_verbose_level'] == 0:
                 p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
             else:
@@ -159,9 +159,9 @@ def concat(settings: dict, file: str) -> None:
     concat_file.close()
 
     if settings['detected_audio_stream']:
-        arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', Path(settings['tmp_folder']) / 'concatlist.txt', '-i', Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', str(settings['audio_bitrate']), '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
+        arg = ['ffmpeg', '-nostdin', '-safe', '0', '-f', 'concat', '-i', Path(settings['tmp_folder']) / 'concatlist.txt', '-i', Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', str(settings['audio_bitrate']), '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
     else:
-        arg = ['ffmpeg', '-safe', '0', '-f', 'concat', '-i', Path(settings['tmp_folder']) / 'concatlist.txt', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
+        arg = ['ffmpeg', '-nostdin', '-safe', '0', '-f', 'concat', '-i', Path(settings['tmp_folder']) / 'concatlist.txt', '-c:v', 'copy', '-an', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
 
     logger.info('Combining chunks...')
 

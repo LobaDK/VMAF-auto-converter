@@ -104,7 +104,7 @@ def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Eve
     sys.excepthook = handler.handle_exception
     logger = create_logger(settings['log_queue'], 'audio_extractor')
 
-    arg = ['ffmpeg', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
+    arg = ['ffmpeg', '-nostdin', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
     logger.debug(f'Extracting audio with command: {" ".join(str(item) for item in arg)}')
     if settings['ffmpeg_verbose_level'] == 0:
         run(arg, stderr=DEVNULL, stdout=DEVNULL)

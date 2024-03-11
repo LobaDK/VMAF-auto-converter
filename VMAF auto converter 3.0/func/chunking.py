@@ -188,7 +188,7 @@ def generate(settings: dict,
                 process_failure.set()
                 custom_exit(settings['manager_queue'])
 
-            arg = ['ffmpeg', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
+            arg = ['ffmpeg', '-nostdin', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
             p = run(arg, stderr=DEVNULL)
 
             if p.returncode != 0:
@@ -237,8 +237,11 @@ def convert(settings: dict,
     handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
     sys.excepthook = handler.handle_exception
     logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_converter')
-    logger = create_logger(settings['log_queue'], 'VMAF')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
+    vmaf_logger = create_logger(settings['log_queue'], 'VMAF')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
 
+    # TODO: Figure out why CTRL+C/SIGINT causes a '"Nonetype" object is not subscriptable' error in this try block, and fix it.
+    #   Or rework the custom_exit function to not close the listener queue by itself but handle it elsewhere.
+    #   Currently, the custom_exit function causes the listener queue to close before it can log everything to the file.
     try:
         while not process_failure.is_set():
             attempt = 0
@@ -260,7 +263,7 @@ def convert(settings: dict,
 
                 # TODO: Longer/Larger chunks, or a high preset, can cause the process to take a very long time.
                 # Maybe add some code that occasionally prints the progress of the conversion process?
-                arg = ['ffmpeg', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
+                arg = ['ffmpeg', '-nostdin', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
                 if settings['ffmpeg_verbose_level'] == 0:
                     p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
                 else:
@@ -279,7 +282,7 @@ def convert(settings: dict,
                 attempt += 1
 
                 try:
-                    retry, crf_value = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt, logger)
+                    retry, crf_value = CheckVMAF(settings, crf_value, crf_step, original_chunk, converted_chunk, attempt, vmaf_logger)
                 except VMAFError:
                     logger.error(f'Error calculating VMAF for chunk {i} with CRF value {crf_value}. Skipping...')
                     break

@@ -33,7 +33,7 @@ def CheckVMAF(settings: dict,
         bool: True if the CRF value was adjusted and the file should be reprocessed, False if the file should be skipped and the next one should be processed.
     """
     logger.info(f'Comparing video quality of {Path(output_file).stem}...')
-    arg = ['ffmpeg', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
+    arg = ['ffmpeg', '-nostdin', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     if settings['ffmpeg_verbose_level'] == 0:
         p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
     else:
