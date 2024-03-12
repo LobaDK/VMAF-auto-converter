@@ -159,7 +159,8 @@ def calculate(settings: dict,
 def generate(settings: dict,
              file: str,
              chunk_range: multiprocessing.Value,
-             process_failure: multiprocessing.Event) -> None:
+             process_failure: multiprocessing.Event,
+             i: int) -> None:
     """
     Generates chunks of a video file based on the given settings and queues them for further processing.
 
@@ -168,6 +169,7 @@ def generate(settings: dict,
         file (str): The path to the video file.
         chunk_range (multiprocessing.Value): A shared value representing the total number of chunks.
         process_failure (multiprocessing.Event): An event indicating if a failure has occurred in the process.
+        i (int): The process number.
 
     Returns:
         None
@@ -175,7 +177,7 @@ def generate(settings: dict,
     handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
     sys.excepthook = handler.handle_exception
 
-    logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_generator')
+    logger = create_logger(settings['log_queue'], f'chunk_generator({i})')
 
     logger.info('Generating chunk')
     try:
@@ -229,7 +231,8 @@ def generate(settings: dict,
 def convert(settings: dict,
             file: str,
             chunk_range: multiprocessing.Value,
-            process_failure: multiprocessing.Event) -> None:
+            process_failure: multiprocessing.Event,
+            i: int) -> None:
     """
     Converts video chunks using FFmpeg with specified settings.
 
@@ -238,14 +241,15 @@ def convert(settings: dict,
         file (str): The path to the input video file.
         chunk_range (multiprocessing.Value): A shared value representing the total number of chunks.
         process_failure (multiprocessing.Event): An event indicating if the conversion process has failed.
+        i (int): The process number.
 
     Returns:
         None
     """
     handler = ExceptionHandler(settings['log_queue'], settings['manager_queue'])
     sys.excepthook = handler.handle_exception
-    logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_converter')
-    vmaf_logger = create_logger(settings['log_queue'], 'VMAF')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
+    logger = create_logger(settings['log_queue'], f'chunk_converter({i})')
+    vmaf_logger = create_logger(settings['log_queue'], f'VMAF({i})')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
 
     try:
         while not process_failure.is_set():

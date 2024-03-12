@@ -27,7 +27,7 @@ def listener_process(log_queue: multiprocessing.Queue) -> None:
 
     # Create a Formatter
     file_formatter = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)s - %(message)s')
-    stream_formatter = logging.Formatter('\n%(name)s[%(levelname)s]: %(message)s')
+    stream_formatter = logging.Formatter('\n%(levelname)s: [%(name)s] %(message)s')
 
     # Set the Formatter on the Handlers
     file_handler.setFormatter(file_formatter)
@@ -67,10 +67,13 @@ def create_logger(log_queue: multiprocessing.Queue, logger_name: str) -> logging
     Returns:
         logging.Logger: The created logger object.
     """
-    handler = logging.handlers.QueueHandler(log_queue)
-    logger = logging.getLogger(logger_name)
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+    if logger_name in logging.Logger.manager.loggerDict:
+        logger = logging.getLogger(logger_name)
+    else:
+        handler = logging.handlers.QueueHandler(log_queue)
+        logger = logging.getLogger(logger_name)
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
 
     return logger
 
