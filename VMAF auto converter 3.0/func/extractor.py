@@ -87,7 +87,7 @@ def GetVideoMetadata(file: str, settings: dict) -> dict[str, int]:
             while not fps.isnumeric() or int(fps) <= 0:
                 fps = input('\nManual input required: ')
         video_metadata_settings['fps'] = int(fps)
-        logger.debug(f'Found video stream: {video_metadata["codec_name"]}, with {video_metadata_settings["total_frames"]} frames and {video_metadata_settings["fps"]} fps.')
+        logger.debug(f'Found video stream: {video_metadata["codec_name"]}, with {video_metadata_settings["total_frames"]} frames at {video_metadata_settings["fps"]} fps.')
     return video_metadata_settings
 
 

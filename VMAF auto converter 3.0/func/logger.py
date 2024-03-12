@@ -67,6 +67,7 @@ def create_logger(log_queue: multiprocessing.Queue, logger_name: str) -> logging
     Returns:
         logging.Logger: The created logger object.
     """
+    # Check if the logger already exists to avoid creating duplicate handlers
     if logger_name in logging.Logger.manager.loggerDict:
         logger = logging.getLogger(logger_name)
     else:

@@ -19,11 +19,13 @@ manager_queue = multiprocessing.Queue()
 # Create a queue for logs
 log_queue = NamedQueue('log_queue')
 
+# Create an exception handler that catches all exceptions across the main script and processes.
 handler = ExceptionHandler(log_queue, manager_queue)
 sys.excepthook = handler.handle_exception
 
 
-# Signal handler that catches all SIGINTs (CTRL + C) across the main script, threads and processes.
+# Signal handler that catches SIGINTs (CTRL + C) and terminates all child processes before exiting.
+# Since the data we create isn't critical, we don't need to worry about data loss, so we can just terminate everything.
 def signal_handler(sig, frame):
     logger = create_logger(log_queue, 'SignalHandler')
     logger.debug('Caught SIGINT')
@@ -75,6 +77,7 @@ def main():
         settings = ReadSettings(log_queue, manager_queue)
         input('New settings.ini has been created. Press enter when ready to continue...')
 
+    # Add the queues to the settings dictionary, so they can be accessed from anywhere in the script.
     settings['chunk_calculate_queue'] = chunk_calculate_queue
     settings['chunk_generator_queue'] = chunk_generator_queue
     settings['chunk_concat_queue'] = chunk_concat_queue
@@ -104,6 +107,8 @@ def main():
                 encoder(settings, file)
                 end = time.time()
                 logger.info(f'Took {end - start} seconds to convert {pathlib.Path(file).name}')
+                # TODO: Implement intro and outro, or consider removing the option from the settings.
+                #   Doesn't seem like it's really worth it to implement.
                 if settings['use_intro'] or settings['use_outro']:
                     raise NotImplementedError('Intro and outro not yet implemented')
             else:

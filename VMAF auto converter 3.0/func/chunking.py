@@ -45,15 +45,17 @@ def calculate(settings: dict,
             if settings['chunk_mode'] == EQUAL_SIZE_CHUNKS:  # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT INTO n EQUAL SIZED CHUNKS
                 logger.debug(f'Calculating {settings["chunk_size"]} chunks')
                 # Iterate through the chunk_size shifted by 1, to start iter from 1
-                for i in range(1, settings['chunk_size'] + 1):
+                for chunk in range(1, settings['chunk_size'] + 1):
                     # Calculate end_frame by dividing it by the chunk_size and multiply with iter
-                    end_frame = floor((settings['total_frames']) / (settings['chunk_size']) * i)
+                    # For example if the video has 3600 frames and the chunk_size is 5:
+                    # 3600 / 5 = 720, so the loop will iterate from 0 to 720, 720 to 1440, 1440 to 2160, 2160 to 2880 and 2880 to 3600
+                    end_frame = floor((settings['total_frames']) / (settings['chunk_size']) * chunk)
 
                     # Create chunk variable with the folder structure and filename
                     # and put it, alongside start_frame, end_frame and iter, in the queue for the chunk generator to use
-                    chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{i}.{settings["output_extension"]}'
-                    logger.debug(f'Adding chunk {i} to queue with start_frame {start_frame} and end_frame {end_frame}')
-                    settings['chunk_calculate_queue'].put((start_frame, end_frame, i, chunk))
+                    chunk = Path(settings['tmp_folder']) / 'prepared' / f'chunk{chunk}.{settings["output_extension"]}'
+                    logger.debug(f'Adding chunk {chunk} to queue with start_frame {start_frame} and end_frame {end_frame}')
+                    settings['chunk_calculate_queue'].put((start_frame, end_frame, chunk, chunk))
 
                     # Turn new start_frame into the old end_frame value, if end frame has not yet reached the end of the video
                     if not end_frame == settings['total_frames']:
@@ -66,14 +68,16 @@ def calculate(settings: dict,
 
             elif settings['chunk_mode'] == FIXED_LENGTH_CHUNKS:  # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT INTO n LONG CHUNKS
                 logger.debug(f'Calculating chunks with length {settings["chunk_length"]} seconds')
-                # Convert the total frames into seconds and iterate through them, with the step being the length of each chunk
-                for i in range(0, int(settings['total_frames'] / settings['fps']), settings['chunk_length']):
+                # Convert the total frames into seconds and iterate through them, with the step being the length of each chunk in seconds
+                # For example if the video has 3600 frames, is 60fps and the chunk length is 10 seconds:
+                # 3600 / 60 = 60 seconds, so the loop will iterate from 0 to 60 with a step of 10 and create 6 chunks that are 10 seconds long
+                for chunk_length in range(0, int(settings['total_frames'] / settings['fps']), settings['chunk_length']):
                     chunk_count += 1
                     # Calculate current iter + chunk length
                     # If it exceeds or is equal to the total duration in decimal seconds
                     # that will be the final chunk, and end_frame will instead be the last/total frames
                     # This avoids end_frame stepping over the total amount of frames there are
-                    if not i + settings['chunk_length'] >= (settings['total_frames'] / settings['fps']):
+                    if not chunk_length + settings['chunk_length'] >= (settings['total_frames'] / settings['fps']):
                         end_frame = start_frame + (settings['chunk_length'] * settings['fps'])
                     else:
                         end_frame = settings['total_frames']
@@ -95,6 +99,8 @@ def calculate(settings: dict,
 
             elif settings['chunk_mode'] == KEYFRAME_BASED_CHUNKS:  # GENERATE TIMINGS FOR ENCODING WITH VIDEO SPLIT BY EVERY KEYFRAME
                 # Use ffprobe to read each frame and it's flags. A flag of "K" means it's a keyframe.
+                # By far the most computationally expensive method, and takes longer to finish, as it reads every frame.
+                # However the multiprocessing aspect should help.
                 logger.debug('Calculating chunks based on keyframes')
                 arg = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
                 try:

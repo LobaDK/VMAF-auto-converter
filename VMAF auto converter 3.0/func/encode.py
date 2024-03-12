@@ -109,7 +109,7 @@ def encoder(settings: dict, file: str) -> None:
                 chunk_generator_process.start()
                 processlist.append(chunk_generator_process)
 
-            # Clear process list and create, start and add N chunk converter processes to the process list
+            # create, start and add N chunk converter processes to the process list
             for i in range(1, settings['chunk_threads'] + 1):
                 chunk_converter_process = Process(target=convert,
                                                   args=(settings,
