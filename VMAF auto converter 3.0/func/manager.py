@@ -60,20 +60,6 @@ class ExceptionHandler:
         self.manager_queue.put((exc_type, exc_value, formatted_traceback))
 
 
-def custom_exit(manager_queue: multiprocessing.Queue) -> None:
-    """
-    Exits the program and sends a None to the manager queue to stop the queue manager.
-
-    Args:
-        manager_queue (multiprocessing.Queue): The queue used for receiving exceptions.
-
-    Returns:
-        None
-    """
-    manager_queue.put(None)
-    exit(1)
-
-
 def queue_manager(queue_list: list[NamedQueue], manager_queue: multiprocessing.Queue, log_queue: NamedQueue) -> None:
     """
     Manages the queues used in the VMAF auto converter.

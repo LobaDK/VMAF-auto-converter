@@ -5,10 +5,11 @@ from tempfile import gettempdir
 from time import sleep
 import multiprocessing
 import traceback
+import os
+import signal
 
 from func.checks import IntOrFloat, custombool, IsPath, ParentExists
 from func.logger import create_logger
-from func.manager import custom_exit
 
 FFMPEG_VERBOSE_LEVEL_QUIET = 0
 FFMPEG_VERBOSE_LEVEL_STATS = 1
@@ -122,13 +123,13 @@ def ReadSettings(log_queue: multiprocessing.Queue, manager_queue: multiprocessin
                         break
                     elif EmptySettings_menu == 'N':
                         logger.debug('User chose not to create new settings.ini, closing')
-                        custom_exit(manager_queue)
+                        os.kill(os.getpid(), signal.SIGINT)
                     else:
                         print('\nOnly "y" and "n" are supported\n')
                 continue
             else:
                 logger.error('Max attempts reached, closing')
-                custom_exit(manager_queue)
+                os.kill(os.getpid(), signal.SIGINT)
 
     parser = argparse.ArgumentParser(description='AV1 converter script using VMAF to control the quality, version 3', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -191,7 +192,7 @@ def ReadSettings(log_queue: multiprocessing.Queue, manager_queue: multiprocessin
         settings['ffmpeg_print'] = ['-n']
     else:
         logger.warning(f'ffmpeg_verbose_level with value {settings["ffmpeg_verbose_level"]} is invalid. Must be 0, 1, or 2')
-        custom_exit(manager_queue)
+        os.kill(os.getpid(), signal.SIGINT)
 
     return settings
 

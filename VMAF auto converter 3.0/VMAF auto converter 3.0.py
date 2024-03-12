@@ -37,10 +37,6 @@ def signal_handler(sig, frame):
     exit(1)
 
 
-# Set the signal handler and a 0 process group
-signal.signal(signal.SIGINT, signal_handler)
-
-
 def main():
     # Make settings global, so they can be accessed from anywhere in the script
     global settings
@@ -121,4 +117,6 @@ def main():
 
 
 if __name__ == '__main__':
+    # Set the signal handler for SIGINT. We're doing it here to avoid the signal being inherited by child processes.
+    signal.signal(signal.SIGINT, signal_handler)
     main()

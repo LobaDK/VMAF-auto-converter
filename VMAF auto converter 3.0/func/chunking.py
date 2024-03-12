@@ -5,10 +5,12 @@ from pathlib import Path
 from subprocess import DEVNULL, run
 from time import sleep
 import sys
+import os
+import signal
 
 from func.logger import create_logger
 from func.vmaf import CheckVMAF, VMAFError
-from func.manager import ExceptionHandler, custom_exit
+from func.manager import ExceptionHandler
 
 EQUAL_SIZE_CHUNKS = 1
 FIXED_LENGTH_CHUNKS = 2
@@ -95,11 +97,14 @@ def calculate(settings: dict,
                 # Use ffprobe to read each frame and it's flags. A flag of "K" means it's a keyframe.
                 logger.debug('Calculating chunks based on keyframes')
                 arg = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
-                p = run(arg, capture_output=True)
+                try:
+                    p = run(arg, capture_output=True)
+                except KeyboardInterrupt:
+                    process_failure.set()
                 if p.returncode != 0:
                     logger.error(f'Error calculating keyframes: {p.stderr.decode()} with command: {" ".join(str(item) for item in arg)}')
                     process_failure.set()
-                    custom_exit(settings['manager_queue'])
+                    os.kill(os.getpid(), signal.SIGINT)
 
                 frames = loads(p.stdout.decode())
                 # Iterate through each frame
@@ -136,13 +141,13 @@ def calculate(settings: dict,
                 break
         else:
             if process_failure.is_set():
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
     except Exception as e:
         logger.error(f'Error calculating chunks: {e}')
         # Set a global event indicating an error has occurred across a process
         process_failure.set()
-        custom_exit(settings['manager_queue'])
+        os.kill(os.getpid(), signal.SIGINT)
     else:
         # Ensure each chunk generator process is stopped
         for _ in range(settings['chunk_threads']):
@@ -186,16 +191,19 @@ def generate(settings: dict,
             else:
                 logger.error(f'Invalid item received from chunk_calculate_queue: {item}')
                 process_failure.set()
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
             arg = ['ffmpeg', '-nostdin', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
-            p = run(arg, stderr=DEVNULL)
+            try:
+                p = run(arg, stderr=DEVNULL)
+            except KeyboardInterrupt:
+                process_failure.set()
 
             if p.returncode != 0:
                 logger.error(f'Error generating chunk {i} with command: {" ".join(str(item) for item in arg)}')
                 # Set a global event indicating an error has occurred across a process
                 process_failure.set()
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
             logger.info(f'Finished generating chunk {i} out of {chunk_range.value}')
 
@@ -207,13 +215,13 @@ def generate(settings: dict,
             settings['chunk_generator_queue'].put((start_frame, end_frame, i, original_chunk, converted_chunk))
         else:
             if process_failure.is_set():
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
     except Exception as e:
         logger.error(f'Error generating chunks: {e}')
         # Set a global event indicating an error has occurred across a process
         process_failure.set()
-        custom_exit(settings['manager_queue'])
+        os.kill(os.getpid(), signal.SIGINT)
     else:
         return
 
@@ -239,9 +247,6 @@ def convert(settings: dict,
     logger = create_logger(settings['log_queue'], f'{multiprocessing.current_process().name} - chunk_converter')
     vmaf_logger = create_logger(settings['log_queue'], 'VMAF')  # Create a new logger for VMAF and pass it to avoid duplicate log messages
 
-    # TODO: Figure out why CTRL+C/SIGINT causes a '"Nonetype" object is not subscriptable' error in this try block, and fix it.
-    #   Or rework the custom_exit function to not close the listener queue by itself but handle it elsewhere.
-    #   Currently, the custom_exit function causes the listener queue to close before it can log everything to the file.
     try:
         while not process_failure.is_set():
             attempt = 0
@@ -255,7 +260,7 @@ def convert(settings: dict,
             else:
                 logger.error(f'Invalid item received from chunk_generator_queue: {item}')
                 process_failure.set()
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
             crf_step = settings['initial_crf_step']
             while True:
@@ -264,16 +269,19 @@ def convert(settings: dict,
                 # TODO: Longer/Larger chunks, or a high preset, can cause the process to take a very long time.
                 # Maybe add some code that occasionally prints the progress of the conversion process?
                 arg = ['ffmpeg', '-nostdin', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
-                if settings['ffmpeg_verbose_level'] == 0:
-                    p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
-                else:
-                    arg[1:1] = settings['ffmpeg_print']
-                    p = run(arg)
+                try:
+                    if settings['ffmpeg_verbose_level'] == 0:
+                        p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+                    else:
+                        arg[1:1] = settings['ffmpeg_print']
+                        p = run(arg)
+                except KeyboardInterrupt:
+                    process_failure.set()
 
                 if p.returncode != 0:
                     logger.error(f'Error converting chunk {i} with command: {" ".join(str(item) for item in arg)}')
                     process_failure.set()
-                    custom_exit(settings['manager_queue'])
+                    os.kill(os.getpid(), signal.SIGINT)
 
                 if attempt >= settings['max_attempts']:
                     logger.error(f'Failed to convert chunk {i} after {settings["max_attempts"]} attempts. Skipping...')
@@ -296,12 +304,12 @@ def convert(settings: dict,
                     continue
         else:
             if process_failure.is_set():
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
     except Exception as e:
         logger.error(f'Error converting chunks: {e}')
         # Set a global event indicating an error has occurred across a process
         process_failure.set()
-        custom_exit(settings['manager_queue'])
+        os.kill(os.getpid(), signal.SIGINT)
     else:
         return
 

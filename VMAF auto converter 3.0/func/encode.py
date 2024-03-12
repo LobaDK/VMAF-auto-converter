@@ -4,13 +4,15 @@ from subprocess import DEVNULL, run
 from threading import Thread
 from time import sleep
 import sys
+import os
+import signal
 
 from func.chunking import calculate, generate, convert
 from func.extractor import ExtractAudio, GetAudioMetadata, GetVideoMetadata
 from func.temp import CreateTempFolder
 from func.vmaf import CheckVMAF, VMAFError
 from func.logger import create_logger
-from func.manager import ExceptionHandler, custom_exit
+from func.manager import ExceptionHandler
 
 NO_CHUNK = 0
 
@@ -35,14 +37,18 @@ def encoder(settings: dict, file: str) -> None:
             logger.info(f'Converting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
             arg = ['ffmpeg', '-nostdin', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
-            if settings['ffmpeg_verbose_level'] == 0:
-                p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
-            else:
-                arg[1:1] = settings['ffmpeg_print']
-                p = run(arg)
+            try:
+                if settings['ffmpeg_verbose_level'] == 0:
+                    p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+                else:
+                    arg[1:1] = settings['ffmpeg_print']
+                    p = run(arg)
+            except KeyboardInterrupt:
+                os.kill(os.getpid(), signal.SIGINT)
+
             if p.returncode != 0:
                 logger.error(f'Error converting {Path(file).stem} with arguments: {arg}')
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
             print('\nVideo encoding finished!')
 
             if settings['attempt'] >= settings['max_attempts']:
@@ -122,7 +128,7 @@ def encoder(settings: dict, file: str) -> None:
         else:
             if process_failure.is_set():
                 logger.error('An error occurred during chunking. Exiting...')
-                custom_exit(settings['manager_queue'])
+                os.kill(os.getpid(), signal.SIGINT)
 
         concat(settings, file)
 
@@ -165,15 +171,18 @@ def concat(settings: dict, file: str) -> None:
 
     logger.info('Combining chunks...')
 
-    if settings['ffmpeg_verbose_level'] == 0:
-        p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
-    else:
-        arg[1:1] = settings['ffmpeg_print']
-        p = run(arg)
+    try:
+        if settings['ffmpeg_verbose_level'] == 0:
+            p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+        else:
+            arg[1:1] = settings['ffmpeg_print']
+            p = run(arg)
+    except KeyboardInterrupt:
+        os.kill(os.getpid(), signal.SIGINT)
 
     if p.returncode != 0:
         logger.error(f'Error combining chunks with arguments: {arg}')
-        custom_exit(settings['manager_queue'])
+        os.kill(os.getpid(), signal.SIGINT)
 
     logger.info('Chunks successfully combined!')
     sleep(3)

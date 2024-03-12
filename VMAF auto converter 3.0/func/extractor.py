@@ -5,6 +5,8 @@ from func.logger import create_logger
 from func.manager import ExceptionHandler
 import sys
 import multiprocessing
+import os
+import signal
 
 
 def GetAudioMetadata(file: str, settings: dict) -> dict[str, int | str | bool]:
@@ -106,11 +108,14 @@ def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Eve
 
     arg = ['ffmpeg', '-nostdin', '-i', str(file), '-vn', '-c:a', 'copy', str(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}')]
     logger.debug(f'Extracting audio with command: {" ".join(str(item) for item in arg)}')
-    if settings['ffmpeg_verbose_level'] == 0:
-        run(arg, stderr=DEVNULL, stdout=DEVNULL)
-    else:
-        arg[1:1] = settings['ffmpeg_print']
-        run(arg)
+    try:
+        if settings['ffmpeg_verbose_level'] == 0:
+            run(arg, stderr=DEVNULL, stdout=DEVNULL)
+        else:
+            arg[1:1] = settings['ffmpeg_print']
+            run(arg)
+    except KeyboardInterrupt:
+        os.kill(os.getpid(), signal.SIGINT)
 
     if not Path(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}').exists():
         process_failure.set()
