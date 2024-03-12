@@ -1,6 +1,6 @@
 from multiprocessing import Event, Process, Value
 from pathlib import Path
-from subprocess import DEVNULL, run
+import subprocess
 from threading import Thread
 from time import sleep
 import sys
@@ -39,11 +39,13 @@ def encoder(settings: dict, file: str) -> None:
             arg = ['ffmpeg', '-nostdin', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             try:
                 if settings['ffmpeg_verbose_level'] == 0:
-                    p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+                    p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
                 else:
                     arg[1:1] = settings['ffmpeg_print']
-                    p = run(arg)
+                    p = subprocess.Popen(arg)
+                p.wait()
             except KeyboardInterrupt:
+                p.terminate()
                 os.kill(os.getpid(), signal.SIGINT)
 
             if p.returncode != 0:
@@ -175,11 +177,13 @@ def concat(settings: dict, file: str) -> None:
 
     try:
         if settings['ffmpeg_verbose_level'] == 0:
-            p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+            p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         else:
             arg[1:1] = settings['ffmpeg_print']
-            p = run(arg)
+            p = subprocess.Popen(arg)
+        p.wait()
     except KeyboardInterrupt:
+        p.terminate()
         os.kill(os.getpid(), signal.SIGINT)
 
     if p.returncode != 0:

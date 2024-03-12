@@ -2,7 +2,7 @@ from json import loads
 from math import floor
 import multiprocessing
 from pathlib import Path
-from subprocess import DEVNULL, run
+import subprocess
 from time import sleep
 import sys
 import os
@@ -98,8 +98,10 @@ def calculate(settings: dict,
                 logger.debug('Calculating chunks based on keyframes')
                 arg = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,flags', '-of', 'json', file]
                 try:
-                    p = run(arg, capture_output=True)
+                    p = subprocess.Popen(arg, capture_output=True)
+                    p.wait()
                 except KeyboardInterrupt:
+                    p.terminate()
                     process_failure.set()
                 if p.returncode != 0:
                     logger.error(f'Error calculating keyframes: {p.stderr.decode()} with command: {" ".join(str(item) for item in arg)}')
@@ -197,8 +199,10 @@ def generate(settings: dict,
 
             arg = ['ffmpeg', '-nostdin', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
             try:
-                p = run(arg, stderr=DEVNULL)
+                p = subprocess.Popen(arg, stderr=subprocess.DEVNULL)
+                p.wait()
             except KeyboardInterrupt:
+                p.terminate()
                 process_failure.set()
 
             if p.returncode != 0:
@@ -275,11 +279,13 @@ def convert(settings: dict,
                 arg = ['ffmpeg', '-nostdin', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
                 try:
                     if settings['ffmpeg_verbose_level'] == 0:
-                        p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+                        p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
                     else:
                         arg[1:1] = settings['ffmpeg_print']
-                        p = run(arg)
+                        p = subprocess.Popen(arg)
+                    p.wait()
                 except KeyboardInterrupt:
+                    p.terminate()
                     process_failure.set()
 
                 if p.returncode != 0:

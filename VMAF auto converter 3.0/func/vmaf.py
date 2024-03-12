@@ -1,7 +1,7 @@
 from json import loads
 from os import remove
 from pathlib import Path
-from subprocess import DEVNULL, run
+import subprocess
 import logging
 import os
 import signal
@@ -37,11 +37,13 @@ def CheckVMAF(settings: dict,
     arg = ['ffmpeg', '-nostdin', '-i', output_file, '-i', input_file, '-lavfi', f'libvmaf=log_path=log.json:log_fmt=json:n_threads={settings["physical_cores"]}', '-f', 'null', '-']
     try:
         if settings['ffmpeg_verbose_level'] == 0:
-            p = run(arg, stderr=DEVNULL, stdout=DEVNULL)
+            p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         else:
             arg[1:1] = settings['ffmpeg_print']
-            p = run(arg)
+            p = subprocess.Popen(arg)
+        p.wait()
     except KeyboardInterrupt:
+        p.terminate()
         os.kill(os.getpid(), signal.SIGINT)
 
     if p.returncode != 0:

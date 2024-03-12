@@ -1,8 +1,8 @@
 from json import loads
 from pathlib import Path
-from subprocess import DEVNULL, PIPE, Popen, run
 from func.logger import create_logger
 from func.manager import ExceptionHandler
+import subprocess
 import sys
 import multiprocessing
 import os
@@ -33,7 +33,8 @@ def GetAudioMetadata(file: str, settings: dict) -> dict[str, int | str | bool]:
     try:
         arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'a:0', '-of', 'json', file]
         logger.debug(f'Running command: {" ".join(str(item) for item in arg)}')
-        audio_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
+        audio_stream = subprocess.Popen(arg, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        audio_stream.wait()
         stdout, _ = audio_stream.communicate()
         audio_metadata = loads(stdout)['streams'][0]
     except IndexError:
@@ -67,7 +68,8 @@ def GetVideoMetadata(file: str, settings: dict) -> dict[str, int]:
     video_metadata_settings = {}
     arg = ['ffprobe', '-v', 'quiet', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]
     logger.debug(f'Running command: {" ".join(str(item) for item in arg)}')
-    video_stream = Popen(arg, stdout=PIPE, stderr=PIPE)
+    video_stream = subprocess.Popen(arg, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    video_stream.wait()
     stdout, stderr = video_stream.communicate()
     try:
         video_metadata = loads(stdout)['streams'][0]
@@ -110,11 +112,13 @@ def ExtractAudio(settings: dict, file: str, process_failure: multiprocessing.Eve
     logger.debug(f'Extracting audio with command: {" ".join(str(item) for item in arg)}')
     try:
         if settings['ffmpeg_verbose_level'] == 0:
-            run(arg, stderr=DEVNULL, stdout=DEVNULL)
+            p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         else:
             arg[1:1] = settings['ffmpeg_print']
-            run(arg)
+            p = subprocess.Popen(arg)
+        p.wait()
     except KeyboardInterrupt:
+        p.terminate()
         os.kill(os.getpid(), signal.SIGINT)
 
     if not Path(Path(settings['tmp_folder']) / f'audio.{settings["audio_codec_name"]}').exists():
