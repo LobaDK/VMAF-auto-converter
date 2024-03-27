@@ -203,7 +203,7 @@ def generate(settings: dict,
                 process_failure.set()
                 os.kill(os.getpid(), signal.SIGINT)
 
-            arg = ['ffmpeg', '-nostdin', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
+            arg = ['ffmpeg', '-nostdin', '-n', '-ss', str(start_frame / settings['fps']), '-to', str(end_frame / settings['fps']), '-i', str(file), '-vf', f'scale={str(settings["output_width"])}:{str(settings["output_height"])}', '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-an', str(chunk)]
             try:
                 p = subprocess.Popen(arg, stderr=subprocess.DEVNULL)
                 p.wait()
@@ -282,7 +282,7 @@ def convert(settings: dict,
 
                 # TODO: Longer/Larger chunks, or a high preset, can cause the process to take a very long time.
                 # Maybe add some code that occasionally prints the progress of the conversion process?
-                arg = ['ffmpeg', '-nostdin', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
+                arg = ['ffmpeg', '-nostdin', '-ss', str(start_frame / int(settings['fps'])), '-to', str(end_frame / int(settings['fps'])), '-i', file, '-vf', f'scale={str(settings["output_width"])}:{str(settings["output_height"])}', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-an', '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', converted_chunk]
                 try:
                     if settings['ffmpeg_verbose_level'] == 0:
                         p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)

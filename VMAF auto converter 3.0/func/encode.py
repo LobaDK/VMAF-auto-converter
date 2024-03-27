@@ -36,7 +36,7 @@ def encoder(settings: dict, file: str) -> None:
         while True:
             logger.info(f'Converting {Path(file).stem}...')
             crf_step = settings['initial_crf_step']
-            arg = ['ffmpeg', '-nostdin', '-i', file, '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
+            arg = ['ffmpeg', '-nostdin', '-i', file, '-vf', f'scale={str(settings["output_width"])}:{str(settings["output_height"])}', '-c:a', 'aac', '-c:v', 'libsvtav1', '-crf', str(crf_value), '-b:v', '0', '-b:a', str(settings['audio_bitrate']), '-g', str(settings['keyframe_interval']), '-preset', str(settings['av1_preset']), '-pix_fmt', settings['pixel_format'], '-svtav1-params', f'tune={str(settings["tune_mode"])}', '-movflags', '+faststart', f'{Path(settings["output_dir"]) / Path(file).stem}.{settings["output_extension"]}']
             try:
                 if settings['ffmpeg_verbose_level'] == 0:
                     p = subprocess.Popen(arg, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
